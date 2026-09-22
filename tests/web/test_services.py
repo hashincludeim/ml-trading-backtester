@@ -27,11 +27,18 @@ def data_dir(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 
 def test_figure_json_escapes_script_close() -> None:
+    import pandas as pd
     import plotly.graph_objects as go
 
-    out = services.figure_json(go.Figure(layout={"title": {"text": "</script>"}}))
+    fig = go.Figure(
+        go.Scatter(x=pd.to_datetime(["2024-01-02"]), y=[1]),
+        layout={"title": {"text": "</script>"}},
+    )
+    out = services.figure_json(fig)
     assert "</script>" not in out
-    assert json.loads(out)["layout"]["title"]["text"] == "</script>"
+    parsed = json.loads(out)
+    assert parsed["layout"]["title"]["text"] == "</script>"
+    assert parsed["data"][0]["x"] == ["2024-01-02"]  # midnight timestamps compacted
 
 
 def test_available_tickers_from_cache(data_dir: Path, db: None) -> None:
@@ -45,15 +52,26 @@ def test_missing_prices_raise_no_data(data_dir: Path, db: None) -> None:
 
 def test_overview_and_indicators(data_dir: Path, db: None) -> None:
     ctx = services.overview_context("TEST.L", None, None)
-    assert "price" in ctx["charts"]
+    assert set(ctx["charts"]) == {"price", "underwater", "annual", "monthly", "volatility"}
+    assert "Worst fall" in ctx["insights"]["underwater"]
     assert ctx["stats"][0]["label"] == "Last close"
     ind = services.indicators_context("TEST.L", None, None)
     assert json.loads(ind["charts"]["indicators"])["layout"]["title"]["text"]
+    assert json.loads(ind["charts"]["signals"])["data"]
 
 
 def test_exploration(data_dir: Path, db: None) -> None:
     ctx = services.exploration_context("TEST.L")
-    assert set(ctx["charts"]) == {"distribution", "correlation", "balance", "returns"}
+    assert set(ctx["charts"]) == {
+        "distribution",
+        "signal",
+        "feature_corr",
+        "correlation",
+        "balance",
+        "acf",
+        "returns",
+    }
+    assert set(ctx["insights"]) == {"feature_corr", "acf", "returns"}
     assert 0 < ctx["up_share"] < 1
 
 
@@ -72,15 +90,25 @@ def test_train_then_models_backtest_multi(data_dir: Path, db: None) -> None:
 
     models = services.models_context("TEST.L", "linear_svc")
     assert models["selected"] == "linear_svc"
+    assert {"rolling", "folds", "scores"} <= set(models["charts"])
     assert {r["name"] for r in models["rows"]} == {"logistic_regression", "linear_svc"}
 
     bt = services.backtest_context("TEST.L", cost_bps=0, mode="long_flat", focus=None)
     labels = [row["label"] for row in bt["table"]]
     assert labels[-1] == "Buy & hold"
-    assert set(bt["charts"]) == {"equity", "drawdown", "rolling", "returns"}
+    assert set(bt["charts"]) == {
+        "equity",
+        "drawdown",
+        "rolling",
+        "returns",
+        "costs",
+        "risk_return",
+        "monthly",
+    }
+    assert "costs" in bt["insights"]
     costly = services.backtest_context("TEST.L", cost_bps=50, mode="long_flat", focus=None)
     assert costly["benchmark"]["total_return"] < bt["benchmark"]["total_return"]
 
     multi = services.multi_ticker_context("sharpe")
     assert multi["summary"][0]["ticker"] == "TEST.L"
-    assert set(multi["charts"]) == {"heatmap", "best", "prices"}
+    assert set(multi["charts"]) == {"heatmap", "best", "prices", "ticker_corr", "ticker_risk"}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -100,3 +100,35 @@ def run_backtest(
         drawdown=equity.apply(drawdown),
         metrics=metrics,
     )
+
+
+def cost_sensitivity(
+    close: pd.Series,
+    predictions: dict[str, pd.Series],
+    costs_bps: tuple[float, ...],
+    config: BacktestConfig | None = None,
+) -> pd.DataFrame:
+    """Annualised Sharpe of each strategy (and buy-and-hold) across transaction costs.
+
+    Args:
+        close: Full close-price history.
+        predictions: ``{name: 1/0 predictions}``.
+        costs_bps: Costs to evaluate, in basis points per unit of position change.
+        config: Base settings (mode, annualisation); ``cost_bps`` is overridden.
+
+    Returns:
+        Frame indexed by cost (bp) with one column per strategy plus ``buy_and_hold``.
+    """
+    base = config or BacktestConfig()
+    rows = {}
+    for cost in costs_bps:
+        cfg = replace(base, cost_bps=float(cost))
+        row = {}
+        for name, preds in predictions.items():
+            result = run_backtest(close, preds, cfg)
+            row[name] = result.metrics[STRATEGY]["sharpe"]
+        row[BUY_AND_HOLD] = result.metrics[BUY_AND_HOLD]["sharpe"]
+        rows[float(cost)] = row
+    frame = pd.DataFrame(rows).T
+    frame.index.name = "cost_bps"
+    return frame

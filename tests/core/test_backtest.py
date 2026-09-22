@@ -51,3 +51,13 @@ def test_drawdown_non_positive() -> None:
     bt = run_backtest(CLOSE, preds)
     assert (bt.drawdown <= 0).all().all()
     assert bt.metrics[STRATEGY]["max_drawdown"] == pytest.approx(-bt.drawdown[STRATEGY].min())
+
+
+def test_cost_sensitivity_monotone_in_costs() -> None:
+    from stockml.evaluation.backtest import cost_sensitivity
+
+    preds = pd.Series([1, 0, 1, 0], index=IDX[:4])
+    frame = cost_sensitivity(CLOSE, {"m": preds}, (0, 10, 50))
+    assert list(frame.columns) == ["m", "buy_and_hold"]
+    assert frame.index.tolist() == [0.0, 10.0, 50.0]
+    assert frame["m"].is_monotonic_decreasing

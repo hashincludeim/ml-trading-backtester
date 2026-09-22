@@ -37,9 +37,14 @@
       </table>
     </div>
   </section>
-  <section class="card">{% plotly_chart charts.heatmap "chart-heat" %}<p class="note">Colour is centred on {% if metric == "sharpe" %}zero{% else %}0.5 (chance){% endif %}: blue is better, red is worse.</p></section>
+  <div class="section-head"><h2>Models across stocks</h2><p>Does any model work consistently, or only by luck on one ticker?</p></div>
+  <section class="card">{% plotly_chart charts.heatmap "chart-heat" %}</section>
+  <section class="card">{% plotly_chart charts.best "chart-best" %}</section>
+
+  <div class="section-head"><h2>The stocks themselves</h2><p>Full-history behaviour of each bank</p></div>
+  <section class="card">{% plotly_chart charts.prices "chart-prices" %}</section>
   <div class="grid grid-2">
-    <section class="card">{% plotly_chart charts.best "chart-best" %}</section>
-    <section class="card">{% plotly_chart charts.prices "chart-prices" %}</section>
+    <section class="card">{% plotly_chart charts.ticker_risk "chart-ticker-risk" %}</section>
+    <section class="card">{% plotly_chart charts.ticker_corr "chart-ticker-corr" %}{% include "dashboard/_insight.html" with text=insights.ticker_corr %}</section>
   </div>
 {% endblock %}

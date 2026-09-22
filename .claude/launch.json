@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "stockml",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["web/manage.py", "runserver", "8000"],
-      "port": 8000
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "exec .venv/bin/python web/manage.py runserver ${PORT:-8000}"],
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

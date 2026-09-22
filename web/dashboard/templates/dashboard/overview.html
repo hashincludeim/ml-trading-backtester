@@ -2,8 +2,18 @@
 {% load dashboard_tags %}
 {% block title %}Overview{% endblock %}
 {% block heading %}{{ form.ticker.value }} overview{% endblock %}
-{% block intro %}Adjusted daily prices and trading volume{% if range %} from {{ range.0|date:"j M Y" }} to {{ range.1|date:"j M Y" }}{% endif %}. Long ranges are drawn as weekly or monthly bars so the page stays fast; zoom or pick a shorter range for daily candles.{% endblock %}
+{% block intro %}Adjusted daily prices{% if range %} from {{ range.0|date:"j M Y" }} to {{ range.1|date:"j M Y" }}{% endif %}: the price path, how deep and long the losses ran, when the stock made or lost money, and how turbulent it was.{% endblock %}
 {% block content %}
   {% include "dashboard/_tiles.html" %}
   <section class="card">{% plotly_chart charts.price "chart-price" %}</section>
+
+  <div class="section-head"><h2>Risk</h2><p>How painful holding this stock has been</p></div>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.underwater "chart-underwater" %}{% include "dashboard/_insight.html" with text=insights.underwater %}</section>
+    <section class="card">{% plotly_chart charts.volatility "chart-vol" %}{% include "dashboard/_insight.html" with text=insights.volatility %}</section>
+  </div>
+
+  <div class="section-head"><h2>Returns by calendar</h2><p>Good years, bad years, and whether any month stands out</p></div>
+  <section class="card">{% plotly_chart charts.annual "chart-annual" %}{% include "dashboard/_insight.html" with text=insights.annual %}</section>
+  <section class="card">{% plotly_chart charts.monthly "chart-monthly" %}{% include "dashboard/_insight.html" with text=insights.monthly %}</section>
 {% endblock %}

@@ -31,7 +31,7 @@
         <tbody>
           {% for r in rows %}
             <tr>
-              <td><span class="swatch" style="background: {{ r.color }}"></span><a href="?ticker={{ form.ticker.value|urlencode }}&model={{ r.name }}">{{ r.label }}</a></td>
+              <td><span class="swatch" data-swatch="{{ r.color }}" style="background: {{ r.color }}"></span><a href="?ticker={{ form.ticker.value|urlencode }}&model={{ r.name }}">{{ r.label }}</a></td>
               <td>{{ r.cv_mean|pct }} <span class="muted">± {{ r.cv_std|pct }}</span></td>
               <td>{{ r.cv_auc|num }}</td>
               <td>{{ r.accuracy|pct }}</td>
@@ -53,17 +53,25 @@
     </div>
   </section>
 
+  <div class="section-head"><h2>Training period</h2><p>How models scored during time-series cross-validation</p></div>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.cv "chart-cv" %}</section>
-    <section class="card">{% plotly_chart charts.roc "chart-roc" %}</section>
+    <section class="card">{% plotly_chart charts.folds "chart-folds" %}{% include "dashboard/_insight.html" with text=insights.folds %}</section>
   </div>
+
+  <div class="section-head"><h2>Test period</h2><p>Unseen data: can the models rank up days above down days, and does any edge persist?</p></div>
   <div class="grid grid-2">
-    <section class="card">
-      {% plotly_chart charts.confusion "chart-cm" %}
-    </section>
-    <section class="card">
-      {% plotly_chart charts.importance "chart-imp" %}
-      <p class="note">Permutation importance is measured on the last validation fold of the training period, never on the test set, and always in terms of the original named features (even for PCA pipelines).</p>
-    </section>
+    <section class="card">{% plotly_chart charts.roc "chart-roc" %}</section>
+    <section class="card">{% plotly_chart charts.rolling "chart-rolling-acc" %}{% include "dashboard/_insight.html" with text=insights.rolling %}</section>
   </div>
+
+  <div class="section-head"><h2>Inside {{ selected_label }}</h2><p>Pick another model from the selector or the table above</p></div>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.scores "chart-scores" %}{% include "dashboard/_insight.html" with text=insights.scores %}</section>
+    <section class="card">{% plotly_chart charts.confusion "chart-cm" %}</section>
+  </div>
+  <section class="card">
+    {% plotly_chart charts.importance "chart-imp" %}
+    <p class="insight">Permutation importance is measured on the last validation fold of the training period, never on the test set. It's always reported for the original named features, even for PCA pipelines.</p>
+  </section>
 {% endblock %}

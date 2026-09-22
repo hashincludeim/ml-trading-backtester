@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    /* Apply a saved theme before first paint so there's no light/dark flash. */
+    try { var t = localStorage.getItem("stockml-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
   <title>{% block title %}StockML{% endblock %} · StockML</title>
   <meta name="description" content="Next-day stock direction models, backtests and interactive charts.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,6 +27,10 @@
           <a href="{% url url_name %}{% if form.ticker.value and key != 'multi' %}?ticker={{ form.ticker.value|urlencode }}{% endif %}"{% if page == key %} aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Switch theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
     </div>
   </header>
 
@@ -54,6 +62,7 @@
     Models are trained offline with chronological splits and time-series cross-validation.
   </footer>
 
+  {{ theme_map|json_script:"theme-map" }}
   <script src="https://cdn.plot.ly/plotly-{{ plotlyjs_version }}.min.js" charset="utf-8"></script>
   <script src="{% static 'dashboard/dashboard.js' %}"></script>
 </body>

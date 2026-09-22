@@ -10,7 +10,7 @@
     <div class="field"><label for="id_cost_bps">Cost per trade</label>
       <div class="range-row"><input type="range" name="cost_bps" id="id_cost_bps" min="0" max="50" step="1" value="{{ form.cost_bps.value|default:5 }}" data-autosubmit><output for="id_cost_bps"></output></div>
     </div>
-    <div class="field"><label for="id_model">Histogram model</label>
+    <div class="field"><label for="id_model">Detail model</label>
       <select name="model" id="id_model" data-autosubmit>
         {% for value, label in model_choices %}<option value="{{ value }}"{% if value == focus %} selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
@@ -35,7 +35,7 @@
         <tbody>
           {% for r in table %}
             <tr{% if r.benchmark %} class="benchmark"{% endif %}>
-              <td>{% if r.benchmark %}<span class="swatch dashed"></span>{% else %}<span class="swatch" style="background: {{ r.color }}"></span>{% endif %}{{ r.label }}</td>
+              <td>{% if r.benchmark %}<span class="swatch dashed"></span>{% else %}<span class="swatch" data-swatch="{{ r.color }}" style="background: {{ r.color }}"></span>{% endif %}{{ r.label }}</td>
               <td class="{% if r.total_return > 0 %}pos{% elif r.total_return < 0 %}neg{% endif %}">{{ r.total_return|signed_pct }}</td>
               <td>{{ r.annual_return|signed_pct }}</td>
               <td>{{ r.annual_volatility|pct }}</td>
@@ -53,9 +53,19 @@
     </div>
   </section>
 
+  <div class="section-head"><h2>Costs and risk</h2><p>Would it survive real trading, and was the return worth the risk?</p></div>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.costs "chart-costs" %}{% include "dashboard/_insight.html" with text=insights.costs %}</section>
+    <section class="card">{% plotly_chart charts.risk_return "chart-rr" %}{% include "dashboard/_insight.html" with text=insights.risk_return %}</section>
+  </div>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.drawdown "chart-dd" %}</section>
     <section class="card">{% plotly_chart charts.rolling "chart-rolling" %}</section>
   </div>
-  <section class="card">{% plotly_chart charts.returns "chart-returns" %}</section>
+
+  <div class="section-head"><h2>Inside one strategy</h2><p>Change the model with the "Detail model" selector</p></div>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.returns "chart-returns" %}</section>
+    <section class="card">{% plotly_chart charts.monthly "chart-monthly" %}</section>
+  </div>
 {% endblock %}

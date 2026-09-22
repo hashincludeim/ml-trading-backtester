@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, TypeVar
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from django.conf import settings
@@ -24,24 +26,39 @@ from django.core.cache import cache
 from django.db import transaction
 
 from dashboard.models import ModelResult, Ticker, TrainingRun
-from stockml.config import BacktestConfig, DataConfig, ExperimentConfig, config_hash
+from stockml import analysis
+from stockml.config import (
+    AnalysisConfig,
+    BacktestConfig,
+    DataConfig,
+    ExperimentConfig,
+    config_hash,
+)
 from stockml.data.cleaning import clean_prices
 from stockml.data.loader import cache_path, list_cached_tickers, load_prices
-from stockml.evaluation.backtest import BUY_AND_HOLD, STRATEGY, BacktestResult, run_backtest
+from stockml.evaluation.backtest import (
+    BUY_AND_HOLD,
+    STRATEGY,
+    BacktestResult,
+    cost_sensitivity,
+    next_day_log_returns,
+    run_backtest,
+)
 from stockml.evaluation.metrics import (
     RocCurve,
     annualised_return,
     annualised_volatility,
     max_drawdown,
     rolling_sharpe,
+    sharpe,
 )
 from stockml.experiment import run_experiment
 from stockml.features.pipeline import build_feature_frame, compute_indicators
-from stockml.features.technical import log_returns
+from stockml.features.technical import log_returns, sma
 from stockml.models.persistence import save_model
 from stockml.models.registry import MODEL_REGISTRY, model_label
 from stockml.viz import charts
-from stockml.viz.theme import model_color
+from stockml.viz.theme import CATEGORICAL, model_color
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +84,16 @@ def data_config() -> DataConfig:
     return DataConfig(data_dir=Path(settings.DATA_DIR))
 
 
+_MIDNIGHT = re.compile(r'T00:00:00(?:\.0+)?"')
+
+
 def figure_json(fig: go.Figure) -> str:
-    """Serialise a figure for embedding inside ``<script type="application/json">``."""
-    return str(fig.to_json()).replace("</", "<\\/")
+    """Serialise a figure for embedding inside ``<script type="application/json">``.
+
+    Daily timestamps are shortened to plain dates (smaller pages), and ``</`` is escaped so the
+    JSON can never close its script tag.
+    """
+    return _MIDNIGHT.sub('"', str(fig.to_json())).replace("</", "<\\/")
 
 
 def _cached(key: str, builder: Callable[[], T]) -> T:
@@ -144,6 +168,10 @@ def _price_stats(prices: pd.DataFrame) -> list[dict[str, str]]:
     ]
 
 
+def _count(n: int) -> str:
+    return "none" if n == 0 else str(n)
+
+
 def _tone(value: float) -> str:
     return "pos" if value > 0 else "neg" if value < 0 else ""
 
@@ -151,17 +179,75 @@ def _tone(value: float) -> str:
 # --- pages -----------------------------------------------------------------------------------
 
 
+def _fmt_month(ts: pd.Timestamp | None) -> str:
+    return "not yet" if ts is None else f"{ts:%b %Y}"
+
+
 def overview_context(ticker: str, start: dt.date | None, end: dt.date | None) -> dict[str, Any]:
-    """Candlestick + volume chart and headline statistics for a date range."""
+    """Price history, drawdowns, calendar returns and volatility for a date range."""
+    acfg = AnalysisConfig()
 
     def build() -> dict[str, Any]:
-        prices = _clip_dates(get_prices(ticker), start, end)
+        full = get_prices(ticker)
+        prices = _clip_dates(full, start, end)
         if len(prices) < 2:
             raise NoDataError("Not enough data in the selected date range.")
+        close = prices["Close"]
+        overlays = pd.DataFrame({f"SMA {w}": sma(full["Close"], w) for w in acfg.trend_sma_windows})
+        rets = log_returns(close)
+        annual = analysis.annual_returns(rets)
+        months = analysis.calendar_returns(rets)
+        vol = _clip_dates(
+            analysis.rolling_annualised_volatility(
+                full["Close"], acfg.volatility_window
+            ).to_frame(),
+            start,
+            end,
+        )["volatility"]
+        episode = analysis.worst_drawdown(close)
+        month_avg = months.mean()
+        vol_peak = vol.idxmax() if vol.notna().any() else None
         return {
             "stats": _price_stats(prices),
-            "charts": {"price": figure_json(charts.price_volume_chart(prices, ticker))},
             "range": (prices.index[0].date(), prices.index[-1].date()),
+            "charts": {
+                "price": figure_json(
+                    charts.price_volume_chart(prices, ticker, overlays, acfg.events)
+                ),
+                "underwater": figure_json(charts.underwater_chart(close, ticker, episode)),
+                "annual": figure_json(
+                    charts.annual_returns_chart(annual, f"{ticker} return by calendar year")
+                ),
+                "monthly": figure_json(
+                    charts.monthly_returns_heatmap(months, f"{ticker} monthly returns")
+                ),
+                "volatility": figure_json(
+                    charts.volatility_chart(vol, ticker, acfg.volatility_window, acfg.events)
+                ),
+            },
+            "insights": {
+                "underwater": (
+                    f"Worst fall: {episode.depth:.0%} from {_fmt_month(episode.peak_date)} to "
+                    f"{_fmt_month(episode.trough_date)}; back at the old high: "
+                    f"{_fmt_month(episode.recovery_date)}."
+                ),
+                "annual": (
+                    f"{(annual > 0).sum()} of {len(annual)} years were positive. Best "
+                    f"{annual.idxmax()} ({annual.max():+.0%}), worst {annual.idxmin()} "
+                    f"({annual.min():+.0%})."
+                ),
+                "monthly": (
+                    f"Best average month: {month_avg.idxmax()} ({month_avg.max():+.1%}); worst: "
+                    f"{month_avg.idxmin()} ({month_avg.min():+.1%}). With about "
+                    f"{months.notna().sum().min()} years per month, these gaps are mostly noise."
+                ),
+                "volatility": (
+                    f"Volatility peaked at {vol.max():.0%} in {_fmt_month(vol_peak)}, against a "
+                    f"typical {vol.median():.0%}."
+                    if vol_peak is not None
+                    else "Not enough data for rolling volatility."
+                ),
+            },
         }
 
     return _cached(f"overview:{ticker}:{start}:{end}:{_prices_version(ticker)}", build)
@@ -172,14 +258,23 @@ def indicators_context(ticker: str, start: dt.date | None, end: dt.date | None) 
     cfg = ExperimentConfig().features
 
     def build() -> dict[str, Any]:
-        indicators = _clip_dates(compute_indicators(get_prices(ticker), cfg), start, end)
+        full = compute_indicators(get_prices(ticker), cfg)
+        indicators = _clip_dates(full, start, end)
         if len(indicators) < 2:
             raise NoDataError("Not enough data in the selected date range.")
         n_bull = int(indicators["ema_cross_bullish"].sum())
         n_bear = int(indicators["ema_cross_bearish"].sum())
         last = indicators.iloc[-1]
+        signals = analysis.indicator_signal_table(indicators, cfg)
+        nxt = next_day_log_returns(indicators["Close"]).dropna()
+        base = float((nxt > 0).mean())
+        distinct = signals[(signals["up_rate"] - base).abs() > 1.96 * signals["se"]]
+        extreme = signals.loc[(signals["up_rate"] - base).abs().idxmax()] if len(signals) else None
         return {
-            "charts": {"indicators": figure_json(charts.indicator_chart(indicators, ticker, cfg))},
+            "charts": {
+                "indicators": figure_json(charts.indicator_chart(indicators, ticker, cfg)),
+                "signals": figure_json(charts.indicator_signal_chart(signals, base)),
+            },
             "stats": [
                 {"label": f"RSI ({cfg.rsi_window}) latest", "value": f"{last['rsi']:.1f}"},
                 {
@@ -190,6 +285,16 @@ def indicators_context(ticker: str, start: dt.date | None, end: dt.date | None) 
                 {"label": "Bullish EMA crosses", "value": str(n_bull)},
                 {"label": "Bearish EMA crosses", "value": str(n_bear)},
             ],
+            "insights": {
+                "signals": (
+                    f"Over {len(nxt):,} days, {len(distinct)} of {len(signals)} signal states "
+                    f"differ from the {base:.1%} average by more than their 95% range. The most "
+                    f"extreme, {extreme['indicator']} {extreme['state'].lower()} "
+                    f"({extreme['up_rate']:.0%} up), rests on just {int(extreme['n'])} days."
+                    if extreme is not None
+                    else "Not enough data to evaluate signals."
+                ),
+            },
             "config": cfg,
         }
 
@@ -199,20 +304,59 @@ def indicators_context(ticker: str, start: dt.date | None, end: dt.date | None) 
 
 
 def exploration_context(ticker: str) -> dict[str, Any]:
-    """Feature distributions, correlations, target balance, and daily-return distribution."""
+    """Feature distributions and predictive power, correlations, and return behaviour."""
     cfg = ExperimentConfig().features
+    acfg = AnalysisConfig()
 
     def build() -> dict[str, Any]:
         prices = get_prices(ticker)
         X, y = build_feature_frame(prices, cfg)
-        daily = pd.DataFrame({BENCHMARK: X["return_1d"]})
+        daily = X["return_1d"]
+        forward = next_day_log_returns(prices["Close"])
+        buckets = {f: analysis.feature_bucket_stats(X[f], y, acfg.signal_bins) for f in X.columns}
+        corr = analysis.feature_return_correlation(X, forward)
+        band = analysis.noise_band(len(X))
+        acf = analysis.autocorrelation(daily, acfg.acf_max_lag)
+        n_sig = int((corr.abs() > band).sum())
+        n_acf = int((acf.abs() > band).sum())
+        kurt = float(daily.kurt())
+        tail = float((daily.abs() > 3 * daily.std()).mean())
         return {
             "charts": {
                 "distribution": figure_json(charts.feature_distribution_chart(X, y)),
+                "signal": figure_json(
+                    charts.feature_signal_chart(buckets, float(y.mean()), acfg.signal_bins)
+                ),
+                "feature_corr": figure_json(charts.feature_correlation_chart(corr, band)),
                 "correlation": figure_json(charts.correlation_heatmap(X)),
                 "balance": figure_json(charts.target_balance_chart(y)),
+                "acf": figure_json(charts.autocorrelation_chart(acf, band, ticker)),
                 "returns": figure_json(
-                    charts.returns_histogram(daily, f"{ticker} daily log returns")
+                    charts.returns_histogram(
+                        pd.DataFrame({ticker: daily}),
+                        f"{ticker} daily returns vs a normal distribution",
+                        fit_normal=True,
+                    )
+                ),
+            },
+            "insights": {
+                "feature_corr": (
+                    f"{n_sig} of {len(corr)} features clear the noise band; the strongest "
+                    f"({corr.index[0]}) has ρ = {corr.iloc[0]:+.3f}, so it explains well under "
+                    f"1% of the variation in next-day returns."
+                ),
+                "acf": (
+                    f"{n_acf} of {len(acf)} lags fall outside the band, but the largest is only "
+                    f"|ρ| = {acf.abs().max():.3f} (lag {int(acf.abs().idxmax())}), which explains "
+                    f"{acf.abs().max() ** 2:.2%} of the variation. Volatility clustering also "
+                    "makes the simple band too narrow, so even these are weaker than they look."
+                    if n_acf
+                    else f"No lag falls outside the noise band (lag-1 ρ = {acf.iloc[0]:+.3f}): "
+                    "past returns tell you almost nothing about the next one."
+                ),
+                "returns": (
+                    f"Excess kurtosis is {kurt:.1f} (a normal distribution has 0): moves bigger "
+                    f"than 3σ happen on {tail:.1%} of days against 0.3% for a normal curve."
                 ),
             },
             "n_rows": len(X),
@@ -277,11 +421,14 @@ def _model_rows(run: TrainingRun) -> list[dict[str, Any]]:
 
 
 def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
-    """Model comparison table, CV chart, ROC curves, confusion matrix, feature importance."""
+    """Model comparison table plus charts on accuracy, stability, separation and importance."""
     run = latest_run(ticker)
+    acfg = AnalysisConfig()
 
     def build() -> dict[str, Any]:
         results = {r.model_name: r for r in run.results.all()}
+        preds = _run_predictions(run)
+        window = acfg.rolling_accuracy_window
         name = selected if selected in results else next(iter(results))
         chosen: ModelResult = results[name]
         rows = _model_rows(run)
@@ -292,6 +439,15 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
         }
         cv = {n: (r.cv_accuracy_mean, r.cv_accuracy_std) for n, r in results.items()}
         n_beat = sum(row["beats_baseline"] for row in rows)
+        hits = pd.DataFrame(
+            {
+                n: analysis.rolling_hit_rate(preds["y_true"], preds[f"{n}_pred"], window)
+                for n in results
+            }
+        ).dropna(how="all")
+        above = (hits > 0.5).mean()
+        folds = {n: r.cv_scores.get("accuracy", []) for n, r in results.items()}
+        unstable = sum(1 for v in folds.values() if v and min(v) < 0.5 < max(v))
         return {
             "run": run,
             "rows": rows,
@@ -309,6 +465,27 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
                 "roc": figure_json(charts.roc_curves_chart(rocs)),
                 "confusion": figure_json(charts.confusion_matrix_chart(chosen.confusion, name)),
                 "importance": figure_json(charts.feature_importance_chart(importance, name)),
+                "rolling": figure_json(charts.rolling_accuracy_chart(hits, window)),
+                "folds": figure_json(charts.cv_folds_chart(folds)),
+                "scores": figure_json(
+                    charts.score_distribution_chart(preds[f"{name}_score"], preds["y_true"], name)
+                ),
+            },
+            "insights": {
+                "rolling": (
+                    f"Share of the test period each model spent above 50% (rolling {window} days): "
+                    + ", ".join(f"{model_label(n)} {v:.0%}" for n, v in above.items())
+                    + "."
+                ),
+                "folds": (
+                    f"{unstable} of {len(folds)} models swing between beating and losing to a "
+                    "coin flip across folds, so their average CV score hides a lot of instability."
+                ),
+                "scores": (
+                    f"{model_label(name)} has a test ROC AUC of {chosen.roc_auc:.3f}: pick a "
+                    f"random up day and a random down day, and it ranks the up day higher only "
+                    f"{chosen.roc_auc:.0%} of the time (50% = guessing)."
+                ),
             },
         }
 
@@ -345,6 +522,7 @@ def backtest_context(ticker: str, cost_bps: float, mode: str, focus: str | None)
     """Equity curves, drawdowns, rolling Sharpe, return distribution, and a risk table."""
     run = latest_run(ticker)
     config = BacktestConfig(mode=mode, cost_bps=cost_bps)  # type: ignore[arg-type]
+    acfg = AnalysisConfig()
 
     def build() -> dict[str, Any]:
         results = _backtests(ticker, run, config)
@@ -365,6 +543,32 @@ def backtest_context(ticker: str, cost_bps: float, mode: str, focus: str | None)
         bench_row = _risk_row(BENCHMARK, bench.metrics[BUY_AND_HOLD], is_benchmark=True)
         best = table[0]
         focus_name = focus if focus in results else best["name"]
+        preds = _run_predictions(run)
+        sensitivity = cost_sensitivity(
+            get_prices(ticker)["Close"],
+            {n: preds[f"{n}_pred"] for n in results},
+            acfg.cost_grid_bps,
+            config,
+        )
+        beating = (
+            sensitivity.drop(columns=BUY_AND_HOLD).gt(sensitivity[BUY_AND_HOLD], axis=0)
+        ).sum(axis=1)
+        points = pd.DataFrame(
+            [
+                {
+                    "label": row["label"],
+                    "annual_volatility": row["annual_volatility"],
+                    "annual_return": row["annual_return"],
+                    "sharpe": row["sharpe"],
+                    "color": row["color"],
+                    "benchmark": row["benchmark"],
+                }
+                for row in [*table, bench_row]
+            ]
+        ).set_index("label")
+        focus_months = analysis.calendar_returns(returns[focus_name])
+        vol_spread = float(points["annual_volatility"].max() - points["annual_volatility"].min())
+        focus_trades = results[focus_name].metrics[STRATEGY]["n_trades"]
         return {
             "run": run,
             "table": [*table, bench_row],
@@ -383,6 +587,34 @@ def backtest_context(ticker: str, cost_bps: float, mode: str, focus: str | None)
                         returns[[focus_name, BENCHMARK]],
                         f"Daily returns: {model_label(focus_name)} vs buy & hold",
                     )
+                ),
+                "costs": figure_json(charts.cost_sensitivity_chart(sensitivity, cost_bps)),
+                "risk_return": figure_json(
+                    charts.risk_return_scatter(
+                        points,
+                        "Risk vs return on the test period",
+                        "Up and to the left is better: more return for less volatility.",
+                    )
+                ),
+                "monthly": figure_json(
+                    charts.monthly_returns_heatmap(
+                        focus_months, f"Monthly returns: {model_label(focus_name)}"
+                    )
+                ),
+            },
+            "insights": {
+                "risk_return": (
+                    "In long/short mode every strategy is always fully invested (long or short), "
+                    "so they all carry the stock's volatility. Only the return differs."
+                    if vol_spread < 0.005
+                    else "Long/flat strategies sit in cash on predicted down days, so they take "
+                    "less risk than holding the stock. Compare returns per unit of volatility."
+                ),
+                "costs": (
+                    f"With free trading, {_count(int(beating.iloc[0]))} of {len(results)} "
+                    f"strategies beat buy & hold on Sharpe; at {sensitivity.index[-1]:g} bp, "
+                    f"{_count(int(beating.iloc[-1]))} do. {model_label(focus_name)} changed "
+                    f"position {focus_trades:,.0f} times in {len(returns):,} trading days."
                 ),
             },
         }
@@ -437,6 +669,20 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
         mat = mat[[c for c in MODEL_REGISTRY if c in mat.columns]]
         center = 0.0 if metric == "sharpe" else 0.5
         closes = pd.DataFrame({t: get_prices(t)["Close"] for t in tickers})
+        daily = closes.apply(log_returns)
+        ticker_points = pd.DataFrame(
+            {
+                t: {
+                    "annual_volatility": annualised_volatility(daily[t].dropna()),
+                    "annual_return": annualised_return(daily[t].dropna()),
+                    "sharpe": sharpe(daily[t].dropna()),
+                    "color": CATEGORICAL[i % len(CATEGORICAL)],
+                }
+                for i, t in enumerate(tickers)
+            }
+        ).T
+        ret_corr = daily.corr()
+        off_diag = ret_corr.where(~np.eye(len(ret_corr), dtype=bool)).stack()
         best_frame = pd.DataFrame(best_rows).set_index("ticker")
         return {
             "summary": summary,
@@ -446,7 +692,32 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
             "charts": {
                 "heatmap": figure_json(charts.metric_heatmap(mat, METRIC_LABELS[metric], center)),
                 "best": figure_json(charts.strategy_vs_benchmark_chart(best_frame, "Sharpe ratio")),
-                "prices": figure_json(charts.normalised_prices_chart(closes)),
+                "prices": figure_json(
+                    charts.normalised_prices_chart(closes, AnalysisConfig().events)
+                ),
+                "ticker_corr": figure_json(
+                    charts.correlation_heatmap(
+                        daily,
+                        "Daily return correlation between tickers",
+                        "High values mean the banks mostly move together (one shared risk).",
+                    )
+                ),
+                "ticker_risk": figure_json(
+                    charts.risk_return_scatter(
+                        ticker_points,
+                        "Buy & hold risk vs return, full history",
+                        "Each dot is a stock held for the whole period.",
+                    )
+                ),
+            },
+            "insights": {
+                "ticker_corr": (
+                    f"Pairwise correlations range from {off_diag.min():.2f} to "
+                    f"{off_diag.max():.2f}, so holding several banks diversifies surprisingly "
+                    "little."
+                    if len(off_diag)
+                    else ""
+                ),
             },
         }
 

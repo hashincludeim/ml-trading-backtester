@@ -2,8 +2,11 @@
 {% load dashboard_tags %}
 {% block title %}Indicators{% endblock %}
 {% block heading %}Technical indicators{% endblock %}
-{% block intro %}Moving averages, Bollinger Bands, RSI and MACD share one date axis. Click legend entries to toggle overlays (EMAs start hidden); triangles mark {{ config.ema_cross_short }}/{{ config.ema_cross_long }}-day EMA crossovers. Indicators are computed on the full history, so there's no warm-up gap at the start of a range.{% endblock %}
+{% block intro %}The classic trader's toolkit: moving averages, Bollinger Bands, RSI and MACD, with {{ config.ema_cross_short }}/{{ config.ema_cross_long }}-day EMA crossovers marked. Below the chart we test whether any of these signals actually predicted the next day.{% endblock %}
 {% block content %}
   {% include "dashboard/_tiles.html" %}
   <section class="card">{% plotly_chart charts.indicators "chart-indicators" %}</section>
+
+  <div class="section-head"><h2>Do the signals work?</h2><p>Next-day outcome after each indicator state, in the selected range</p></div>
+  <section class="card">{% plotly_chart charts.signals "chart-signals" %}{% include "dashboard/_insight.html" with text=insights.signals %}</section>
 {% endblock %}

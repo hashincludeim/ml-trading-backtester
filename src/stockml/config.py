@@ -139,6 +139,34 @@ class BacktestConfig:
 
 
 @dataclass(frozen=True)
+class AnalysisConfig:
+    """Settings for the descriptive/explanatory charts.
+
+    Attributes:
+        trend_sma_windows: Long moving averages drawn on the overview price chart.
+        volatility_window: Window (trading days) for rolling annualised volatility.
+        rolling_accuracy_window: Window for the rolling hit-rate of model predictions.
+        acf_max_lag: Largest lag shown in the return autocorrelation chart.
+        signal_bins: Quantile buckets per feature in the "does it predict?" chart.
+        cost_grid_bps: Transaction costs evaluated in the cost-sensitivity chart.
+        events: ``(ISO date, label)`` market events annotated on price charts.
+    """
+
+    trend_sma_windows: tuple[int, ...] = (50, 200)
+    volatility_window: int = 63
+    rolling_accuracy_window: int = 63
+    acf_max_lag: int = 20
+    signal_bins: int = 10
+    cost_grid_bps: tuple[float, ...] = (0, 2, 5, 10, 15, 20, 30, 40, 50)
+    events: tuple[tuple[str, str], ...] = (
+        ("2008-09-15", "Lehman collapse"),
+        ("2011-08-08", "Eurozone crisis"),
+        ("2016-06-24", "Brexit vote"),
+        ("2020-03-12", "COVID-19 crash"),
+    )
+
+
+@dataclass(frozen=True)
 class ExperimentConfig:
     """Bundle of all configs needed to reproduce a training run."""
 

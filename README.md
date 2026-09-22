@@ -17,17 +17,33 @@ the original. The table at the bottom lists each one.
 | Features | `features/` | SMA/EMA ratios, RSI (Wilder), MACD, Bollinger position, volatility, EMA trend, volume ratio. Every feature at *t* uses data up to the close of *t* only. Tests check this by changing future prices and asserting earlier features stay the same. |
 | Models | `models/registry.py` | 7 classifiers, each built as `StandardScaler → [PCA] → estimator` inside one sklearn `Pipeline`. Small grids are tuned with `TimeSeriesSplit`. |
 | Evaluation | `evaluation/` | Accuracy/precision/recall/F1/ROC AUC with naive (always-up / majority) baselines. Vectorised backtest with long/short or long/flat, costs in bp, and annualised Sharpe/Sortino/Calmar. |
-| Charts | `viz/charts.py` | Functions that return `go.Figure`, all using one theme (`viz/theme.py`). Each model keeps the same colour on every chart, and the palette is colour-blind-validated. |
+| Analysis | `analysis.py` | Descriptive statistics behind the explanatory charts: drawdown episodes, calendar returns, autocorrelation, feature-bucket up-rates, indicator signal tables. |
+| Charts | `viz/charts.py` | Functions that return `go.Figure`, all using one theme (`viz/theme.py`). Each model keeps the same colour on every chart, and the palette is colour-blind-validated. Dark mode comes from a single light→dark colour map in the theme, which the browser applies when toggling. |
 | Web | `web/dashboard/` | Views only parse input, call `services.py` and render. Figures go to templates as JSON. Results are cached in Django's cache. Training never runs inside a request. |
 
 ### Dashboard pages
 
-1. **Overview**: candlestick + volume (drawn as weekly or monthly bars for long ranges) and headline stats.
-2. **Indicators**: SMA/EMA/Bollinger overlays you can toggle, EMA crossover markers, and RSI and MACD panels on a shared date axis.
-3. **Exploration**: feature distributions split by next-day outcome, a correlation heatmap, target balance by year, and daily-return distribution.
-4. **Models**: comparison table (CV mean ± std and test metrics against the baseline), CV chart, ROC curves for every model, confusion matrix, and permutation importance.
-5. **Backtest**: equity curves against buy & hold, drawdowns, rolling Sharpe, a risk table, a daily-return histogram, and a live transaction-cost slider.
-6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold for each ticker, and rebased price performance.
+Each chart has a one-line "how to read this" subtitle, and key charts carry a caption computed
+from the data (for example "0 of 17 features clear the noise band"). A header toggle switches
+between light and dark themes, remembers the choice, and otherwise follows the OS setting.
+
+1. **Overview**: candlesticks with 50/200-day trend lines and annotated market events (Lehman,
+   Eurozone, Brexit, COVID), volume, drawdown from the all-time high, rolling volatility,
+   calendar-year returns, and a year × month returns heatmap.
+2. **Indicators**: SMA/EMA/Bollinger overlays you can toggle, EMA crossover markers, RSI with
+   overbought/oversold zones, MACD, and a "what happened the day after each signal?" dot plot
+   with 95% intervals.
+3. **Exploration**: return autocorrelation and fat tails against a normal curve, each feature's
+   rank correlation with the next-day return against a noise band, next-day up-rate by feature
+   decile, feature distributions by outcome, target balance, and feature redundancy.
+4. **Models**: comparison table against the naive baseline, CV mean ± std and fold-by-fold
+   stability, ROC curves, rolling test-set accuracy, how well each model's scores separate up
+   days from down days, confusion matrix, and permutation importance.
+5. **Backtest**: equity curves against buy & hold, a risk table, how Sharpe decays as costs rise,
+   risk vs return, drawdowns, rolling Sharpe, daily-return histogram, monthly returns, and a live
+   transaction-cost slider.
+6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold, rebased prices,
+   buy & hold risk vs return per stock, and cross-ticker return correlation.
 
 ## Quick start
 
