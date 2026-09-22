@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+from stockml.config import ExperimentConfig, ModelConfig
+from stockml.experiment import run_experiment
+from tests.conftest import make_prices
+
+
+def test_run_experiment_small() -> None:
+    cfg = ExperimentConfig(
+        model=ModelConfig(
+            models=("logistic_regression", "linear_svc"),
+            cv_splits=3,
+            tune=False,
+            importance_repeats=2,
+        )
+    )
+    result = run_experiment(make_prices(400, seed=5), cfg)
+    assert set(result.outcomes) == {"logistic_regression", "linear_svc"}
+    frame = result.predictions_frame()
+    assert list(frame.columns) == [
+        "y_true",
+        "logistic_regression_pred",
+        "logistic_regression_score",
+        "linear_svc_pred",
+        "linear_svc_score",
+    ]
+    assert frame.index.equals(result.split.X_test.index)
+    assert 0 <= result.baseline["accuracy"] <= 1

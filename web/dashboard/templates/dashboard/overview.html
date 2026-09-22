@@ -1,0 +1,9 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Overview{% endblock %}
+{% block heading %}{{ form.ticker.value }} overview{% endblock %}
+{% block intro %}Adjusted daily prices and trading volume{% if range %} from {{ range.0|date:"j M Y" }} to {{ range.1|date:"j M Y" }}{% endif %}. Long ranges are drawn as weekly or monthly bars so the page stays fast; zoom or pick a shorter range for daily candles.{% endblock %}
+{% block content %}
+  {% include "dashboard/_tiles.html" %}
+  <section class="card">{% plotly_chart charts.price "chart-price" %}</section>
+{% endblock %}

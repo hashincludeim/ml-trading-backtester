@@ -1,0 +1,5 @@
+<div class="tiles">
+  {% for s in stats %}
+    <div class="tile"><div class="label">{{ s.label }}</div><div class="value {{ s.tone }}">{{ s.value }}</div></div>
+  {% endfor %}
+</div>

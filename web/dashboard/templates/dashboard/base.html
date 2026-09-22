@@ -1,0 +1,60 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}StockML{% endblock %} · StockML</title>
+  <meta name="description" content="Next-day stock direction models, backtests and interactive charts.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232a78d6'/><path d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="{% url 'dashboard:overview' %}">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l5-5 4 4 7-8"/></svg></span>
+        <span>StockML</span>
+      </a>
+      <nav class="nav" aria-label="Pages">
+        {% for key, url_name, label in nav_items %}
+          <a href="{% url url_name %}{% if form.ticker.value and key != 'multi' %}?ticker={{ form.ticker.value|urlencode }}{% endif %}"{% if page == key %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>{% block heading %}{% endblock %}</h1>
+        <p>{% block intro %}{% endblock %}</p>
+      </div>
+      {% block controls %}{% if form %}{% include "dashboard/_controls.html" %}{% endif %}{% endblock %}
+    </div>
+
+    {% if empty %}
+      {% include "dashboard/_empty.html" %}
+    {% elif error %}
+      <div class="callout warn" role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <p>{{ error }}</p>
+      </div>
+    {% elif form and form.errors %}
+      <div class="callout warn" role="alert"><p>Please fix the highlighted inputs.</p></div>
+    {% else %}
+      {% block content %}{% endblock %}
+    {% endif %}
+  </main>
+
+  <footer>
+    Prices from Yahoo Finance (adjusted, GBX). Educational project: nothing here is investment advice.
+    Models are trained offline with chronological splits and time-series cross-validation.
+  </footer>
+
+  <script src="https://cdn.plot.ly/plotly-{{ plotlyjs_version }}.min.js" charset="utf-8"></script>
+  <script src="{% static 'dashboard/dashboard.js' %}"></script>
+</body>
+</html>

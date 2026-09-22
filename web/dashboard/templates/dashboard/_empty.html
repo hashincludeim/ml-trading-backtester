@@ -1,0 +1,12 @@
+<div class="card empty">
+  {% if page == "models" or page == "backtest" %}
+    <h2>No trained models yet</h2>
+    <p class="muted">Training runs offline, never inside a web request. Fetch prices, then train:</p>
+    <pre>python web/manage.py fetch_prices BARC.L HSBA.L LLOY.L NWG.L
+python web/manage.py train_models --all</pre>
+  {% else %}
+    <h2>No price data yet</h2>
+    <p class="muted">Download prices into the Parquet cache with the management command:</p>
+    <pre>python web/manage.py fetch_prices BARC.L HSBA.L LLOY.L NWG.L</pre>
+  {% endif %}
+</div>

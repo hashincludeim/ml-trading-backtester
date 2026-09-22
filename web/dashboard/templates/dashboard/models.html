@@ -1,0 +1,69 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Models{% endblock %}
+{% block heading %}Model comparison{% endblock %}
+{% block intro %}{% if run %}Trained on {{ run.n_train|default:0 }} days ({{ run.train_start|date:"M Y" }} to {{ run.train_end|date:"M Y" }}) and tested on the following {{ run.n_test }} days ({{ run.test_start|date:"M Y" }} to {{ run.test_end|date:"M Y" }}). Every pipeline scales (and optionally applies PCA) inside each time-series fold.{% endif %}{% endblock %}
+{% block controls %}
+  <form class="controls" method="get" aria-label="Model options">
+    <div class="field"><label for="id_ticker">Ticker</label>{{ form.ticker }}</div>
+    <div class="field"><label for="id_model">Detail model</label>
+      <select name="model" id="id_model" data-autosubmit>
+        {% for value, label in model_choices %}<option value="{{ value }}"{% if value == selected %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Update</button>
+  </form>
+{% endblock %}
+{% block content %}
+  <div class="callout{% if n_beat == 0 %} warn{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <p><strong>{{ n_beat }} of {{ n_models }}</strong> models beat the best naive guess, which is to always predict "{{ naive_direction }}" ({{ naive_accuracy|pct }} test accuracy).
+      {% if best_auc %}The best ROC AUC is {{ best_auc.roc_auc|num }} ({{ best_auc.label }}); 0.5 means no better than chance.{% endif %}
+      Daily direction is close to a coin flip, and these results reflect that honestly.</p>
+  </div>
+
+  <section class="card">
+    <h2>Test-set metrics</h2>
+    <p class="sub">CV figures are the mean ± std over expanding-window folds of the training period. Test figures come from the same fitted pipeline that is backtested.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>CV accuracy</th><th>CV AUC</th><th>Test accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>ROC AUC</th><th>vs naive</th><th>Tuned params</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td><span class="swatch" style="background: {{ r.color }}"></span><a href="?ticker={{ form.ticker.value|urlencode }}&model={{ r.name }}">{{ r.label }}</a></td>
+              <td>{{ r.cv_mean|pct }} <span class="muted">± {{ r.cv_std|pct }}</span></td>
+              <td>{{ r.cv_auc|num }}</td>
+              <td>{{ r.accuracy|pct }}</td>
+              <td>{{ r.precision|pct }}</td>
+              <td>{{ r.recall|pct }}</td>
+              <td>{{ r.f1|num }}</td>
+              <td>{{ r.roc_auc|num }}</td>
+              <td>{% if r.beats_baseline %}<span class="badge pos">above</span>{% else %}<span class="badge neg">below</span>{% endif %}</td>
+              <td class="muted">{{ r.params|default:"defaults" }}</td>
+            </tr>
+          {% endfor %}
+          <tr class="benchmark">
+            <td><span class="swatch dashed"></span>Always up (baseline)</td>
+            <td>–</td><td>–</td>
+            <td>{{ baseline.accuracy|pct }}</td><td>{{ baseline.precision|pct }}</td><td>{{ baseline.recall|pct }}</td><td>{{ baseline.f1|num }}</td><td>{{ baseline.roc_auc|num }}</td><td></td><td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.cv "chart-cv" %}</section>
+    <section class="card">{% plotly_chart charts.roc "chart-roc" %}</section>
+  </div>
+  <div class="grid grid-2">
+    <section class="card">
+      {% plotly_chart charts.confusion "chart-cm" %}
+    </section>
+    <section class="card">
+      {% plotly_chart charts.importance "chart-imp" %}
+      <p class="note">Permutation importance is measured on the last validation fold of the training period, never on the test set, and always in terms of the original named features (even for PCA pipelines).</p>
+    </section>
+  </div>
+{% endblock %}

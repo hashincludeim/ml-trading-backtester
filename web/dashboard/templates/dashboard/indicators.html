@@ -1,0 +1,9 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Indicators{% endblock %}
+{% block heading %}Technical indicators{% endblock %}
+{% block intro %}Moving averages, Bollinger Bands, RSI and MACD share one date axis. Click legend entries to toggle overlays (EMAs start hidden); triangles mark {{ config.ema_cross_short }}/{{ config.ema_cross_long }}-day EMA crossovers. Indicators are computed on the full history, so there's no warm-up gap at the start of a range.{% endblock %}
+{% block content %}
+  {% include "dashboard/_tiles.html" %}
+  <section class="card">{% plotly_chart charts.indicators "chart-indicators" %}</section>
+{% endblock %}

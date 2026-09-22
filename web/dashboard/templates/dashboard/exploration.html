@@ -1,0 +1,17 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Exploration{% endblock %}
+{% block heading %}Feature exploration{% endblock %}
+{% block intro %}{{ n_rows|default:0 }} labelled trading days and {{ n_features }} engineered features. Each feature uses only information available at that day's close; the target is whether the <em>next</em> close is higher.{% endblock %}
+{% block content %}
+  <div class="callout">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <p><strong>{{ up_share|pct }}</strong> of days were followed by a rise, so the classes are close to balanced. Where the up and down distributions below overlap almost completely, that feature carries little signal on its own.</p>
+  </div>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.distribution "chart-dist" %}<p class="note">Use the dropdown to switch feature.</p></section>
+    <section class="card">{% plotly_chart charts.balance "chart-balance" %}</section>
+  </div>
+  <section class="card">{% plotly_chart charts.correlation "chart-corr" %}</section>
+  <section class="card">{% plotly_chart charts.returns "chart-returns" %}<p class="note">Daily (not cumulative) log returns. The fat tails come mostly from 2008–09 and 2020.</p></section>
+{% endblock %}

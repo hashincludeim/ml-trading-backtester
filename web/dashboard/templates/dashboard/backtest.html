@@ -1,0 +1,61 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Backtest{% endblock %}
+{% block heading %}Strategy backtest{% endblock %}
+{% block intro %}{% if run %}Each model's prediction at today's close sets tomorrow's position ({% if form.mode.value == "long_flat" %}long or flat{% else %}long or short{% endif %}). Returns are daily log returns over the test period ({{ run.test_start|date:"j M Y" }} to {{ run.test_end|date:"j M Y" }}), net of costs charged on every position change.{% endif %}{% endblock %}
+{% block controls %}
+  <form class="controls" method="get" aria-label="Backtest options">
+    <div class="field"><label for="id_ticker">Ticker</label>{{ form.ticker }}</div>
+    <div class="field"><label for="id_mode">Strategy</label>{{ form.mode }}</div>
+    <div class="field"><label for="id_cost_bps">Cost per trade</label>
+      <div class="range-row"><input type="range" name="cost_bps" id="id_cost_bps" min="0" max="50" step="1" value="{{ form.cost_bps.value|default:5 }}" data-autosubmit><output for="id_cost_bps"></output></div>
+    </div>
+    <div class="field"><label for="id_model">Histogram model</label>
+      <select name="model" id="id_model" data-autosubmit>
+        {% for value, label in model_choices %}<option value="{{ value }}"{% if value == focus %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Update</button>
+  </form>
+{% endblock %}
+{% block content %}
+  <div class="callout{% if n_beat == 0 %} warn{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <p><strong>{{ n_beat }} of {{ n_models }}</strong> strategies beat buy &amp; hold on Sharpe ratio. With hindsight, the best on the test period is {{ best.label }} at <strong>{{ best.sharpe|num:2 }}</strong> against <strong>{{ benchmark.sharpe|num:2 }}</strong> for buy &amp; hold. Drag the cost slider to see how quickly turnover erodes any edge.</p>
+  </div>
+
+  <section class="card">{% plotly_chart charts.equity "chart-equity" %}</section>
+
+  <section class="card">
+    <h2>Risk and return</h2>
+    <p class="sub">Annualised with 252 trading days. Sharpe and Sortino assume a zero risk-free rate; Calmar = annual return ÷ max drawdown.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Strategy</th><th>Total return</th><th>Annual return</th><th>Volatility</th><th>Sharpe</th><th>Sortino</th><th>Max drawdown</th><th>Calmar</th><th>Hit rate</th><th>Trades</th><th>Costs</th></tr></thead>
+        <tbody>
+          {% for r in table %}
+            <tr{% if r.benchmark %} class="benchmark"{% endif %}>
+              <td>{% if r.benchmark %}<span class="swatch dashed"></span>{% else %}<span class="swatch" style="background: {{ r.color }}"></span>{% endif %}{{ r.label }}</td>
+              <td class="{% if r.total_return > 0 %}pos{% elif r.total_return < 0 %}neg{% endif %}">{{ r.total_return|signed_pct }}</td>
+              <td>{{ r.annual_return|signed_pct }}</td>
+              <td>{{ r.annual_volatility|pct }}</td>
+              <td>{{ r.sharpe|num:2 }}</td>
+              <td>{{ r.sortino|num:2 }}</td>
+              <td>{{ r.max_drawdown|pct }}</td>
+              <td>{{ r.calmar|num:2 }}</td>
+              <td>{{ r.hit_rate|pct }}</td>
+              <td>{{ r.n_trades|floatformat:0 }}</td>
+              <td>{{ r.cost_paid|pct:2 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.drawdown "chart-dd" %}</section>
+    <section class="card">{% plotly_chart charts.rolling "chart-rolling" %}</section>
+  </div>
+  <section class="card">{% plotly_chart charts.returns "chart-returns" %}</section>
+{% endblock %}

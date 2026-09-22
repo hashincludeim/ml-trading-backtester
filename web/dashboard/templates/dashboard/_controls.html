@@ -1,0 +1,15 @@
+<form class="controls" method="get" aria-label="Chart options">
+  {% for field in form %}
+    <div class="field">
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% if field.name == "cost_bps" %}
+        <div class="range-row">{{ field }}<output for="{{ field.id_for_label }}"></output></div>
+      {% else %}
+        {{ field }}
+      {% endif %}
+      {{ field.errors }}
+    </div>
+  {% endfor %}
+  {{ form.non_field_errors }}
+  <button class="btn" type="submit">Update</button>
+</form>

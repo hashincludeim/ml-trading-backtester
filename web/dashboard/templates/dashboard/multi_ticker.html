@@ -1,0 +1,45 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_tags %}
+{% block title %}Multi-ticker{% endblock %}
+{% block heading %}Across tickers{% endblock %}
+{% block intro %}The same feature pipeline and model registry applied to every trained ticker{% if total_rows %}: {{ total_rows|floatformat:"0g" }} daily bars in total{% endif %}. Consistent results across stocks matter more than one lucky backtest.{% endblock %}
+{% block controls %}
+  <form class="controls" method="get" aria-label="Metric">
+    <div class="field"><label for="id_metric">Heatmap metric</label>
+      <select name="metric" id="id_metric" data-autosubmit>
+        {% for value, label in form.fields.metric.choices %}<option value="{{ value }}"{% if value == metric %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Update</button>
+  </form>
+{% endblock %}
+{% block content %}
+  <section class="card">
+    <h2>Summary by ticker</h2>
+    <p class="sub">Naive accuracy = always predicting the more common direction in the test period. The model for each ticker is picked by <em>training-period</em> CV ROC AUC, so its test accuracy and Sharpe (5 bp cost, long/short) are genuinely out-of-sample.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ticker</th><th>Test period</th><th>Test days</th><th>Naive accuracy</th><th>CV-selected model</th><th>Its test accuracy</th><th>Strategy Sharpe</th><th>Buy &amp; hold Sharpe</th></tr></thead>
+        <tbody>
+          {% for s in summary %}
+            <tr>
+              <td><a href="{% url 'dashboard:models' %}?ticker={{ s.ticker|urlencode }}">{{ s.ticker }}</a></td>
+              <td>{{ s.test_period }}</td>
+              <td>{{ s.n_test }}</td>
+              <td>{{ s.baseline_acc|pct }}</td>
+              <td>{{ s.best_model }}</td>
+              <td class="{% if s.best_acc > s.baseline_acc %}pos{% else %}neg{% endif %}">{{ s.best_acc|pct }}</td>
+              <td class="{% if s.best_sharpe > s.bh_sharpe %}pos{% else %}neg{% endif %}">{{ s.best_sharpe|num:2 }}</td>
+              <td>{{ s.bh_sharpe|num:2 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card">{% plotly_chart charts.heatmap "chart-heat" %}<p class="note">Colour is centred on {% if metric == "sharpe" %}zero{% else %}0.5 (chance){% endif %}: blue is better, red is worse.</p></section>
+  <div class="grid grid-2">
+    <section class="card">{% plotly_chart charts.best "chart-best" %}</section>
+    <section class="card">{% plotly_chart charts.prices "chart-prices" %}</section>
+  </div>
+{% endblock %}
