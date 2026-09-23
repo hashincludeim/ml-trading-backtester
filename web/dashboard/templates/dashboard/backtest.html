@@ -1,7 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load dashboard_tags %}
 {% block title %}Backtest{% endblock %}
-{% block heading %}Strategy backtest{% endblock %}
+{% block heading %}Strategy backtest{% if ticker_name %}: {{ ticker_name }}{% endif %}{% endblock %}
 {% block intro %}{% if run %}Each model's prediction at today's close sets tomorrow's position ({% if form.mode.value == "long_flat" %}long or flat{% else %}long or short{% endif %}). Returns are daily log returns over the test period ({{ run.test_start|date:"j M Y" }} to {{ run.test_end|date:"j M Y" }}), net of costs charged on every position change.{% endif %}{% endblock %}
 {% block controls %}
   <form class="controls" method="get" aria-label="Backtest options">

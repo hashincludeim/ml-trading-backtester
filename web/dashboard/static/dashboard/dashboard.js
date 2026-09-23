@@ -72,6 +72,9 @@
     if (!source) return;
     const fig = JSON.parse(source.textContent);
     delete fig.layout.width;
+    // plotly.js sizes an autosized plot to its container, so the container needs a definite
+    // height; otherwise it collapses to 0px and the chart spills over the cards below.
+    el.style.height = (fig.layout.height || 420) + "px";
     const title = fig.layout.title && fig.layout.title.text;
     if (title) el.setAttribute("aria-label", title);
     const entry = {

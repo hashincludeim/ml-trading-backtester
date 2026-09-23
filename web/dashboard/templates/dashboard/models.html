@@ -1,7 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load dashboard_tags %}
 {% block title %}Models{% endblock %}
-{% block heading %}Model comparison{% endblock %}
+{% block heading %}Model comparison{% if ticker_name %}: {{ ticker_name }}{% endif %}{% endblock %}
 {% block intro %}{% if run %}Trained on {{ run.n_train|default:0 }} days ({{ run.train_start|date:"M Y" }} to {{ run.train_end|date:"M Y" }}) and tested on the following {{ run.n_test }} days ({{ run.test_start|date:"M Y" }} to {{ run.test_end|date:"M Y" }}). Every pipeline scales (and optionally applies PCA) inside each time-series fold.{% endif %}{% endblock %}
 {% block controls %}
   <form class="controls" method="get" aria-label="Model options">

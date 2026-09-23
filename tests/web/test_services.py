@@ -54,7 +54,7 @@ def test_overview_and_indicators(data_dir: Path, db: None) -> None:
     ctx = services.overview_context("TEST.L", None, None)
     assert set(ctx["charts"]) == {"price", "underwater", "annual", "monthly", "volatility"}
     assert "Worst fall" in ctx["insights"]["underwater"]
-    assert ctx["stats"][0]["label"] == "Last close"
+    assert ctx["stats"][0]["label"].startswith("Close · ")
     ind = services.indicators_context("TEST.L", None, None)
     assert json.loads(ind["charts"]["indicators"])["layout"]["title"]["text"]
     assert json.loads(ind["charts"]["signals"])["data"]
@@ -112,3 +112,27 @@ def test_train_then_models_backtest_multi(data_dir: Path, db: None) -> None:
     multi = services.multi_ticker_context("sharpe")
     assert multi["summary"][0]["ticker"] == "TEST.L"
     assert set(multi["charts"]) == {"heatmap", "best", "prices", "ticker_corr", "ticker_risk"}
+
+
+def test_remove_tickers_cascades_and_deletes_files(data_dir: Path, db: None) -> None:
+    run = services.train_ticker("TEST.L", FAST)
+    run_dir = Path(run.predictions_path).parent
+    assert services.remove_tickers(["TEST.L", "NOPE"], delete_files=True) == ["TEST.L"]
+    assert not Ticker.objects.filter(symbol="TEST.L").exists()
+    assert TrainingRun.objects.count() == 0
+    assert not run_dir.exists()
+    assert services.available_tickers() == []
+
+
+def test_ticker_choices_and_universe_order(db: None) -> None:
+    assert services.ticker_choices(["^GSPC", "XYZ"]) == [
+        ("^GSPC", "S&P 500 (^GSPC)"),
+        ("XYZ", "XYZ"),
+    ]
+    assert services._universe_order(["ZZZ", "MSFT", "^GSPC"]) == ["^GSPC", "MSFT", "ZZZ"]
+
+
+def test_format_price_units() -> None:
+    assert services._format_price(1234.5, "USD") == "$1,234.50"
+    assert services._format_price(158.3, "GBX") == "158.30p"
+    assert services._format_price(7706.03, "points") == "7,706.03"

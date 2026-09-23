@@ -35,10 +35,11 @@ class TickerPageView(TemplateView):
             return context
         data = self.request.GET.copy()
         data.setdefault("ticker", tickers[0])
-        form = self.form_class(data, tickers=tickers)
+        form = self.form_class(data, tickers=services.ticker_choices(tickers))
         context["form"] = form
         if not form.is_valid():
             return context
+        context["ticker_name"] = services.display_name(form.cleaned_data["ticker"])
         try:
             context.update(self.get_page(form.cleaned_data))
         except services.NoDataError as exc:

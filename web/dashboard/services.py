@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
+import shutil
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -33,6 +34,9 @@ from stockml.config import (
     DataConfig,
     ExperimentConfig,
     config_hash,
+    currency_symbol,
+    price_unit,
+    ticker_label,
 )
 from stockml.data.cleaning import clean_prices
 from stockml.data.loader import cache_path, list_cached_tickers, load_prices
@@ -116,16 +120,32 @@ def _clip_dates(frame: pd.DataFrame, start: dt.date | None, end: dt.date | None)
 # --- tickers & prices ------------------------------------------------------------------------
 
 
+def display_name(ticker: str) -> str:
+    """Human-readable name for a ticker (e.g. ``^GSPC`` -> ``S&P 500``)."""
+    return ticker_label(ticker)
+
+
+def ticker_choices(tickers: list[str]) -> list[tuple[str, str]]:
+    """``(symbol, label)`` pairs for select boxes, e.g. ``("MSFT", "Microsoft (MSFT)")``."""
+    return [(t, t if ticker_label(t) == t else f"{ticker_label(t)} ({t})") for t in tickers]
+
+
+def _universe_order(symbols: list[str]) -> list[str]:
+    """Sort symbols in the configured universe order (index first), others alphabetically after."""
+    order = {s: i for i, s in enumerate(DataConfig().tickers)}
+    return sorted(symbols, key=lambda s: (order.get(s, len(order)), s))
+
+
 def available_tickers() -> list[str]:
     """Tickers with cached prices (database first, then the Parquet cache directory)."""
     symbols = list(Ticker.objects.filter(n_rows__gt=0).values_list("symbol", flat=True))
-    return symbols or list_cached_tickers(data_config().data_dir)
+    return _universe_order(symbols or list_cached_tickers(data_config().data_dir))
 
 
 def trained_tickers() -> list[str]:
     """Tickers with at least one training run."""
-    return list(
-        Ticker.objects.filter(runs__isnull=False).distinct().values_list("symbol", flat=True)
+    return _universe_order(
+        list(Ticker.objects.filter(runs__isnull=False).distinct().values_list("symbol", flat=True))
     )
 
 
@@ -153,13 +173,25 @@ def date_bounds(ticker: str) -> tuple[dt.date, dt.date]:
     return idx[0].date(), idx[-1].date()
 
 
-def _price_stats(prices: pd.DataFrame) -> list[dict[str, str]]:
+def _format_price(value: float, unit: str) -> str:
+    """Compact price for a stat tile: ``$245.10``, ``158.30p`` or ``7,706.03`` (index points)."""
+    if unit == "USD":
+        return f"${value:,.2f}"
+    if unit == "GBX":
+        return f"{value:,.2f}p"
+    return f"{value:,.2f}"
+
+
+def _price_stats(prices: pd.DataFrame, unit: str) -> list[dict[str, str]]:
     close = prices["Close"]
     returns = log_returns(close).dropna()
     total = float(close.iloc[-1] / close.iloc[0] - 1.0)
     cagr = annualised_return(returns)
     return [
-        {"label": "Last close", "value": f"{close.iloc[-1]:,.2f} GBX"},
+        {
+            "label": f"Close · {close.index[-1]:%d %b %Y}",
+            "value": _format_price(close.iloc[-1], unit),
+        },
         {"label": "Period return", "value": f"{total:+.1%}", "tone": _tone(total)},
         {"label": "Annualised return", "value": f"{cagr:+.1%}", "tone": _tone(cagr)},
         {"label": "Annualised volatility", "value": f"{annualised_volatility(returns):.1%}"},
@@ -187,6 +219,8 @@ def overview_context(ticker: str, start: dt.date | None, end: dt.date | None) ->
     """Price history, drawdowns, calendar returns and volatility for a date range."""
     acfg = AnalysisConfig()
 
+    name, unit = ticker_label(ticker), price_unit(ticker)
+
     def build() -> dict[str, Any]:
         full = get_prices(ticker)
         prices = _clip_dates(full, start, end)
@@ -208,21 +242,21 @@ def overview_context(ticker: str, start: dt.date | None, end: dt.date | None) ->
         month_avg = months.mean()
         vol_peak = vol.idxmax() if vol.notna().any() else None
         return {
-            "stats": _price_stats(prices),
+            "stats": _price_stats(prices, unit),
             "range": (prices.index[0].date(), prices.index[-1].date()),
             "charts": {
                 "price": figure_json(
-                    charts.price_volume_chart(prices, ticker, overlays, acfg.events)
+                    charts.price_volume_chart(prices, name, overlays, acfg.events, unit=unit)
                 ),
-                "underwater": figure_json(charts.underwater_chart(close, ticker, episode)),
+                "underwater": figure_json(charts.underwater_chart(close, name, episode)),
                 "annual": figure_json(
-                    charts.annual_returns_chart(annual, f"{ticker} return by calendar year")
+                    charts.annual_returns_chart(annual, f"{name} return by calendar year")
                 ),
                 "monthly": figure_json(
-                    charts.monthly_returns_heatmap(months, f"{ticker} monthly returns")
+                    charts.monthly_returns_heatmap(months, f"{name} monthly returns")
                 ),
                 "volatility": figure_json(
-                    charts.volatility_chart(vol, ticker, acfg.volatility_window, acfg.events)
+                    charts.volatility_chart(vol, name, acfg.volatility_window, acfg.events)
                 ),
             },
             "insights": {
@@ -272,7 +306,11 @@ def indicators_context(ticker: str, start: dt.date | None, end: dt.date | None) 
         extreme = signals.loc[(signals["up_rate"] - base).abs().idxmax()] if len(signals) else None
         return {
             "charts": {
-                "indicators": figure_json(charts.indicator_chart(indicators, ticker, cfg)),
+                "indicators": figure_json(
+                    charts.indicator_chart(
+                        indicators, ticker_label(ticker), cfg, unit=price_unit(ticker)
+                    )
+                ),
                 "signals": figure_json(charts.indicator_signal_chart(signals, base)),
             },
             "stats": [
@@ -330,11 +368,11 @@ def exploration_context(ticker: str) -> dict[str, Any]:
                 "feature_corr": figure_json(charts.feature_correlation_chart(corr, band)),
                 "correlation": figure_json(charts.correlation_heatmap(X)),
                 "balance": figure_json(charts.target_balance_chart(y)),
-                "acf": figure_json(charts.autocorrelation_chart(acf, band, ticker)),
+                "acf": figure_json(charts.autocorrelation_chart(acf, band, ticker_label(ticker))),
                 "returns": figure_json(
                     charts.returns_histogram(
-                        pd.DataFrame({ticker: daily}),
-                        f"{ticker} daily returns vs a normal distribution",
+                        pd.DataFrame({ticker_label(ticker): daily}),
+                        f"{ticker_label(ticker)} daily returns vs a normal distribution",
                         fit_normal=True,
                     )
                 ),
@@ -579,7 +617,9 @@ def backtest_context(ticker: str, cost_bps: float, mode: str, focus: str | None)
             "focus": focus_name,
             "model_choices": [(n, model_label(n)) for n in results],
             "charts": {
-                "equity": figure_json(charts.equity_curves_chart(equity, cost_bps)),
+                "equity": figure_json(
+                    charts.equity_curves_chart(equity, cost_bps, currency_symbol(ticker))
+                ),
                 "drawdown": figure_json(charts.drawdown_chart(dd)),
                 "rolling": figure_json(charts.rolling_sharpe_chart(rolling, config.rolling_window)),
                 "returns": figure_json(
@@ -647,7 +687,7 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
             best_bt = bts[best_name]
             best_rows.append(
                 {
-                    "ticker": ticker,
+                    "ticker": ticker_label(ticker),
                     "model": best_name,
                     "strategy": best_bt.metrics[STRATEGY]["sharpe"],
                     "buy_and_hold": best_bt.metrics[BUY_AND_HOLD]["sharpe"],
@@ -656,6 +696,7 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
             summary.append(
                 {
                     "ticker": ticker,
+                    "name": ticker_label(ticker),
                     "test_period": f"{run.test_start:%b %Y} – {run.test_end:%b %Y}",
                     "n_test": run.n_test,
                     "baseline_acc": naive_accuracy(run),
@@ -667,8 +708,9 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
             )
         mat = pd.DataFrame(matrix).T
         mat = mat[[c for c in MODEL_REGISTRY if c in mat.columns]]
+        mat.index = [ticker_label(t) for t in mat.index]
         center = 0.0 if metric == "sharpe" else 0.5
-        closes = pd.DataFrame({t: get_prices(t)["Close"] for t in tickers})
+        closes = pd.DataFrame({ticker_label(t): get_prices(t)["Close"] for t in tickers})
         daily = closes.apply(log_returns)
         ticker_points = pd.DataFrame(
             {
@@ -678,7 +720,7 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
                     "sharpe": sharpe(daily[t].dropna()),
                     "color": CATEGORICAL[i % len(CATEGORICAL)],
                 }
-                for i, t in enumerate(tickers)
+                for i, t in enumerate(closes.columns)
             }
         ).T
         ret_corr = daily.corr()
@@ -699,7 +741,7 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
                     charts.correlation_heatmap(
                         daily,
                         "Daily return correlation between tickers",
-                        "High values mean the banks mostly move together (one shared risk).",
+                        "High values mean the stocks mostly move together (one shared risk).",
                     )
                 ),
                 "ticker_risk": figure_json(
@@ -713,8 +755,8 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
             "insights": {
                 "ticker_corr": (
                     f"Pairwise correlations range from {off_diag.min():.2f} to "
-                    f"{off_diag.max():.2f}, so holding several banks diversifies surprisingly "
-                    "little."
+                    f"{off_diag.max():.2f}: big tech moves largely with the market, so these "
+                    "names diversify each other less than it might seem."
                     if len(off_diag)
                     else ""
                 ),
@@ -753,6 +795,31 @@ def fetch_prices(
         out.append(ticker)
     cache.clear()
     return out
+
+
+def remove_tickers(symbols: list[str], delete_files: bool = False) -> list[str]:
+    """Remove tickers (and, via cascade, their training runs) from the database.
+
+    Args:
+        symbols: Ticker symbols to remove.
+        delete_files: Also delete their cached prices and saved run artefacts under DATA_DIR.
+
+    Returns:
+        The symbols that were found and removed.
+    """
+    data_dir = data_config().data_dir
+    removed = []
+    for symbol in symbols:
+        deleted, _ = Ticker.objects.filter(symbol=symbol).delete()
+        if delete_files:
+            cache_path(symbol, data_dir).unlink(missing_ok=True)
+            run_dir = data_dir / "runs" / symbol
+            if run_dir.is_dir():
+                shutil.rmtree(run_dir)
+        if deleted:
+            removed.append(symbol)
+    cache.clear()
+    return removed
 
 
 def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> TrainingRun:

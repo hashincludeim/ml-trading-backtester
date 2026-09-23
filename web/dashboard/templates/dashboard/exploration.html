@@ -1,7 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load dashboard_tags %}
 {% block title %}Exploration{% endblock %}
-{% block heading %}Feature exploration{% endblock %}
+{% block heading %}Feature exploration{% if ticker_name %}: {{ ticker_name }}{% endif %}{% endblock %}
 {% block intro %}{{ n_rows|default:0 }} labelled trading days and {{ n_features }} engineered features. Each feature uses only information available at that day's close; the target is whether the <em>next</em> close is higher. This page asks, before any model is trained: is there any signal here at all?{% endblock %}
 {% block content %}
   <div class="callout">

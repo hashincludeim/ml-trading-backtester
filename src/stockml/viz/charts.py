@@ -182,6 +182,7 @@ def price_volume_chart(
     overlays: pd.DataFrame | None = None,
     events: Sequence[tuple[str, str]] = (),
     max_points: int = 1_500,
+    unit: str = "USD",
 ) -> go.Figure:
     """Candlesticks with trend overlays and event markers, plus a volume panel.
 
@@ -192,6 +193,7 @@ def price_volume_chart(
             on the full history so they have no warm-up gap.
         events: ``(date, label)`` pairs annotated when inside the range.
         max_points: Bars above this are resampled to weekly/monthly to keep the page fast.
+        unit: Price unit for the axis label (e.g. ``"USD"`` or ``"points"``).
     """
     bars, freq = downsample_ohlcv(prices, max_points)
     fig = make_subplots(
@@ -251,7 +253,7 @@ def price_volume_chart(
     fig.update_layout(
         xaxis_rangeslider_visible=False, hovermode="x unified", bargap=0.05, barcornerradius=0
     )
-    fig.update_yaxes(title_text="Price (GBX)", row=1, col=1)
+    fig.update_yaxes(title_text=f"Price ({unit})", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1, tickformat=".2s", showspikes=False)
     fig.update_xaxes(
         rangeselector={
@@ -452,7 +454,10 @@ def normalised_prices_chart(
 
 
 def indicator_chart(
-    indicators: pd.DataFrame, ticker: str, config: FeatureConfig | None = None
+    indicators: pd.DataFrame,
+    ticker: str,
+    config: FeatureConfig | None = None,
+    unit: str = "USD",
 ) -> go.Figure:
     """Price with SMA/EMA/Bollinger overlays and EMA-crossover markers, plus RSI and MACD panels.
 
@@ -462,6 +467,7 @@ def indicator_chart(
         indicators: Output of :func:`stockml.features.pipeline.compute_indicators`.
         ticker: Symbol used in the title.
         config: Windows used to name the overlay columns.
+        unit: Price unit for axis labels and hover text.
     """
     cfg = config or FeatureConfig()
     df = indicators
@@ -509,7 +515,7 @@ def indicator_chart(
             df["Close"],
             name="Close",
             line={"width": 2.25, "color": TEXT_PRIMARY},
-            hovertemplate="<b>%{y:.1f} GBX</b>",
+            hovertemplate="<b>%{y:,.2f} " + unit + "</b>",
         ),
         row=1,
         col=1,
@@ -623,9 +629,9 @@ def indicator_chart(
         "oversold (green).",
     )
     fig.update_layout(bargap=0, barcornerradius=0, legend={"y": 1.01}, margin={"t": 170})
-    fig.update_yaxes(title_text="Price (GBX)", row=1, col=1)
+    fig.update_yaxes(title_text=f"Price ({unit})", row=1, col=1)
     fig.update_yaxes(title_text="RSI", range=[0, 100], tickvals=[0, 30, 50, 70, 100], row=2, col=1)
-    fig.update_yaxes(title_text="MACD (GBX)", row=3, col=1)
+    fig.update_yaxes(title_text=f"MACD ({unit})", row=3, col=1)
     fig.update_xaxes(title_text="Date", row=3, col=1)
     for text in (rsi_title, macd_title):
         fig.update_annotations(
@@ -1306,20 +1312,21 @@ def _time_series_chart(frame: pd.DataFrame, value_hover: str) -> go.Figure:
     return fig
 
 
-def equity_curves_chart(equity: pd.DataFrame, cost_bps: float) -> go.Figure:
-    """Growth of £1 for each model's strategy and buy-and-hold on one chart.
+def equity_curves_chart(equity: pd.DataFrame, cost_bps: float, currency: str = "$") -> go.Figure:
+    """Growth of 1 unit of currency for each model's strategy and buy-and-hold on one chart.
 
     Args:
         equity: Columns = registry names plus ``"Buy & hold"``; values = growth of 1 unit.
         cost_bps: Transaction cost used, shown in the title.
+        currency: Symbol for the money invested (e.g. ``"$"``).
     """
-    fig = _time_series_chart(equity, "£%{y:.2f}")
+    fig = _time_series_chart(equity, currency + "%{y:.2f}")
     _ref_line(fig, 1.0)
-    fig.add_annotation(  # log axis: annotation y is log10(value), so £1 -> 0
+    fig.add_annotation(  # log axis: annotation y is log10(value), so 1 -> 0
         x=1,
         xref="paper",
         y=0,
-        text="Break-even £1",
+        text=f"Break-even {currency}1",
         showarrow=False,
         xanchor="right",
         yanchor="bottom",
@@ -1327,14 +1334,14 @@ def equity_curves_chart(equity: pd.DataFrame, cost_bps: float) -> go.Figure:
     )
     apply_theme(
         fig,
-        f"Growth of £1 (after {cost_bps:g} bp costs per trade)",
+        f"Growth of {currency}1 (after {cost_bps:g} bp costs per trade)",
         "Date",
         "Portfolio value (log scale)",
         height=520,
         legend_per_row=8,
         subtitle="Dashed grey = simply holding the stock. Click a legend entry to hide it.",
     )
-    fig.update_yaxes(type="log", tickvals=LOG_TICKS, tickformat=".2~f", tickprefix="£")
+    fig.update_yaxes(type="log", tickvals=LOG_TICKS, tickformat=".2~f", tickprefix=currency)
     return date_axes(fig)
 
 

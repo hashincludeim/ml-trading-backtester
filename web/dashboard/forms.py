@@ -15,9 +15,10 @@ MODEL_CHOICES = [(name, spec.label) for name, spec in MODEL_REGISTRY.items()]
 class TickerForm(forms.Form):
     ticker = forms.ChoiceField(choices=())
 
-    def __init__(self, *args: Any, tickers: list[str], **kwargs: Any) -> None:
+    def __init__(self, *args: Any, tickers: list[tuple[str, str]], **kwargs: Any) -> None:
+        """``tickers`` are ``(symbol, label)`` pairs."""
         super().__init__(*args, **kwargs)
-        self.fields["ticker"].choices = [(t, t) for t in tickers]  # type: ignore[attr-defined]
+        self.fields["ticker"].choices = tickers  # type: ignore[attr-defined]
 
 
 class DateRangeForm(TickerForm):

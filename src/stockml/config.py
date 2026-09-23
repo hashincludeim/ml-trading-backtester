@@ -6,6 +6,7 @@ contain no magic values. All configs are frozen so they can be hashed and used a
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
@@ -15,6 +16,39 @@ from typing import Any, Literal
 TRADING_DAYS_PER_YEAR = 252
 PRICE_COLUMNS: tuple[str, ...] = ("Open", "High", "Low", "Close", "Volume")
 
+# Human-readable names shown in the dashboard; unknown symbols fall back to the symbol itself.
+TICKER_NAMES: dict[str, str] = {
+    "^GSPC": "S&P 500",
+    "AMZN": "Amazon",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet (Google)",
+    "ORCL": "Oracle",
+}
+
+
+def ticker_label(ticker: str) -> str:
+    """Display name for a symbol, e.g. ``"^GSPC"`` -> ``"S&P 500"``."""
+    return TICKER_NAMES.get(ticker, ticker)
+
+
+def price_unit(ticker: str) -> str:
+    """Unit that prices are quoted in: index points, pence (LSE ``.L``), or US dollars."""
+    if ticker.startswith("^"):
+        return "points"
+    if ticker.upper().endswith(".L"):
+        return "GBX"
+    return "USD"
+
+
+def currency_symbol(ticker: str) -> str:
+    """Symbol for money invested in a strategy on ``ticker`` (an index is traded via a fund)."""
+    return "£" if price_unit(ticker) == "GBX" else "$"
+
+
+def today_inclusive_end() -> str:
+    """Tomorrow's ISO date: yfinance treats ``end`` as exclusive, so this includes today."""
+    return (dt.date.today() + dt.timedelta(days=1)).isoformat()
+
 
 @dataclass(frozen=True)
 class DataConfig:
@@ -23,7 +57,8 @@ class DataConfig:
     Attributes:
         tickers: Default universe fetched by the ``fetch_prices`` command.
         start: First date requested from the data source (inclusive, ISO format).
-        end: Last date requested from the data source (exclusive, ISO format).
+        end: Last date requested from the data source (exclusive, ISO format). Defaults to
+            tomorrow, so downloads run up to and including the system date.
         data_dir: Root directory for the Parquet price cache.
         auto_adjust: Request split/dividend adjusted OHLC from yfinance.
         outlier_method: ``"zscore"`` scales each daily log return by the rolling volatility of
@@ -35,9 +70,9 @@ class DataConfig:
             separates one-day data errors from genuine crashes.
     """
 
-    tickers: tuple[str, ...] = ("BARC.L", "HSBA.L", "LLOY.L", "NWG.L", "STAN.L")
+    tickers: tuple[str, ...] = ("^GSPC", "AMZN", "MSFT", "GOOGL", "ORCL")
     start: str = "2000-01-01"
-    end: str = "2022-12-31"
+    end: str = field(default_factory=today_inclusive_end)
     data_dir: Path = Path("data")
     auto_adjust: bool = True
     outlier_method: Literal["zscore", "iqr"] = "zscore"
@@ -159,10 +194,11 @@ class AnalysisConfig:
     signal_bins: int = 10
     cost_grid_bps: tuple[float, ...] = (0, 2, 5, 10, 15, 20, 30, 40, 50)
     events: tuple[tuple[str, str], ...] = (
+        ("2000-03-10", "Dot-com peak"),
         ("2008-09-15", "Lehman collapse"),
-        ("2011-08-08", "Eurozone crisis"),
-        ("2016-06-24", "Brexit vote"),
-        ("2020-03-12", "COVID-19 crash"),
+        ("2020-03-16", "COVID-19 crash"),
+        ("2022-03-16", "Fed starts hiking"),
+        ("2022-11-30", "ChatGPT launch"),
     )
 
 

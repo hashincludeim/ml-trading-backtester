@@ -23,7 +23,7 @@
         <tbody>
           {% for s in summary %}
             <tr>
-              <td><a href="{% url 'dashboard:models' %}?ticker={{ s.ticker|urlencode }}">{{ s.ticker }}</a></td>
+              <td><a href="{% url 'dashboard:models' %}?ticker={{ s.ticker|urlencode }}">{{ s.name }}</a> <span class="muted">{{ s.ticker }}</span></td>
               <td>{{ s.test_period }}</td>
               <td>{{ s.n_test }}</td>
               <td>{{ s.baseline_acc|pct }}</td>
@@ -41,7 +41,7 @@
   <section class="card">{% plotly_chart charts.heatmap "chart-heat" %}</section>
   <section class="card">{% plotly_chart charts.best "chart-best" %}</section>
 
-  <div class="section-head"><h2>The stocks themselves</h2><p>Full-history behaviour of each bank</p></div>
+  <div class="section-head"><h2>The stocks themselves</h2><p>Full-history behaviour of each stock and the index</p></div>
   <section class="card">{% plotly_chart charts.prices "chart-prices" %}</section>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.ticker_risk "chart-ticker-risk" %}</section>

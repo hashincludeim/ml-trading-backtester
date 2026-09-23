@@ -8,17 +8,33 @@ It began as a single Colab notebook analysing Barclays (`BARC.L`) from 2000 to 2
 as a tested, typed library with a thin web layer, and fixes the leakage and evaluation problems in
 the original. The table at the bottom lists each one.
 
+## Universe and data
+
+| Ticker | Name | Quoted in | History |
+|---|---|---|---|
+| `^GSPC` | S&P 500 index | index points | 2000 → today |
+| `AMZN` | Amazon | USD | 2000 → today |
+| `MSFT` | Microsoft | USD | 2000 → today |
+| `GOOGL` | Alphabet (Google), class A | USD | Aug 2004 (IPO) → today |
+| `ORCL` | Oracle | USD | 2000 → today |
+
+Prices are daily OHLCV from Yahoo Finance, adjusted for splits and dividends. Downloads run up to
+the **system date** (`DataConfig.end` defaults to tomorrow, because yfinance treats `end` as
+exclusive). The universe, start date, display names and units are all set in
+`src/stockml/config.py`.
+
 ## What's inside
 
 | Layer | Where | Notes |
 |---|---|---|
 | Core library | `src/stockml/` | No Django imports. Small, pure, typed functions; `mypy --strict` clean. |
-| Data | `data/loader.py`, `data/cleaning.py` | yfinance → Parquet cache; handles MultiIndex columns and `auto_adjust` explicitly. Bad ticks are flagged with a volatility-scaled z-score that needs an immediate reversal, so genuine crashes (2008–09) are kept. |
+| Data | `data/loader.py`, `data/cleaning.py` | yfinance → Parquet cache; handles MultiIndex columns and `auto_adjust` explicitly. Bad ticks are flagged with a volatility-scaled z-score that needs an immediate reversal, so genuine crashes (2008, 2020) are kept. |
 | Features | `features/` | SMA/EMA ratios, RSI (Wilder), MACD, Bollinger position, volatility, EMA trend, volume ratio. Every feature at *t* uses data up to the close of *t* only. Tests check this by changing future prices and asserting earlier features stay the same. |
 | Models | `models/registry.py` | 7 classifiers, each built as `StandardScaler → [PCA] → estimator` inside one sklearn `Pipeline`. Small grids are tuned with `TimeSeriesSplit`. |
 | Evaluation | `evaluation/` | Accuracy/precision/recall/F1/ROC AUC with naive (always-up / majority) baselines. Vectorised backtest with long/short or long/flat, costs in bp, and annualised Sharpe/Sortino/Calmar. |
 | Analysis | `analysis.py` | Descriptive statistics behind the explanatory charts: drawdown episodes, calendar returns, autocorrelation, feature-bucket up-rates, indicator signal tables. |
 | Charts | `viz/charts.py` | Functions that return `go.Figure`, all using one theme (`viz/theme.py`). Each model keeps the same colour on every chart, and the palette is colour-blind-validated. Dark mode comes from a single light→dark colour map in the theme, which the browser applies when toggling. |
+| Experiment | `experiment.py` | `run_experiment()` builds features, makes the chronological split, and trains and evaluates every registered model in one loop. |
 | Web | `web/dashboard/` | Views only parse input, call `services.py` and render. Figures go to templates as JSON. Results are cached in Django's cache. Training never runs inside a request. |
 
 ### Dashboard pages
@@ -27,8 +43,8 @@ Each chart has a one-line "how to read this" subtitle, and key charts carry a ca
 from the data (for example "0 of 17 features clear the noise band"). A header toggle switches
 between light and dark themes, remembers the choice, and otherwise follows the OS setting.
 
-1. **Overview**: candlesticks with 50/200-day trend lines and annotated market events (Lehman,
-   Eurozone, Brexit, COVID), volume, drawdown from the all-time high, rolling volatility,
+1. **Overview**: candlesticks with 50/200-day trend lines and annotated market events (dot-com peak,
+   Lehman, COVID, Fed hikes, ChatGPT launch), volume, drawdown from the all-time high, rolling volatility,
    calendar-year returns, and a year × month returns heatmap.
 2. **Indicators**: SMA/EMA/Bollinger overlays you can toggle, EMA crossover markers, RSI with
    overbought/oversold zones, MACD, and a "what happened the day after each signal?" dot plot
@@ -53,13 +69,33 @@ pip install -e ".[dev]"
 cp .env.example .env            # sets DJANGO_DEBUG=true and a dev secret key
 
 python web/manage.py migrate
-python web/manage.py fetch_prices                 # BARC.L HSBA.L LLOY.L NWG.L STAN.L, 2000–2022
+python web/manage.py fetch_prices                 # ^GSPC AMZN MSFT GOOGL ORCL, 2000 to today
 python web/manage.py train_models --all --jobs 4  # ~1 min per ticker
 python web/manage.py runserver
 ```
 
-Pick your own universe or period with `fetch_prices AZN.L SHEL.L --start 2010-01-01 --end 2024-12-31`.
-Use `train_models --ticker AZN.L --models random_forest gradient_boosting --no-tune` for a quick run.
+Then open http://127.0.0.1:8000.
+
+### Keeping data current
+
+```bash
+python web/manage.py fetch_prices                 # re-download every ticker up to today
+python web/manage.py train_models --all --jobs 4  # retrain so backtests include the new days
+```
+
+If you fetch during US trading hours, today's bar is provisional until the 16:00 New York close.
+A running server picks up new data and new training runs automatically.
+
+### Management commands
+
+| Command | What it does |
+|---|---|
+| `fetch_prices [TICKER ...] [--start DATE] [--end DATE] [--use-cache]` | Downloads daily prices into `data/prices/*.parquet` and records ticker metadata. With no tickers it fetches the default universe. It re-downloads to today unless you pass `--use-cache`. |
+| `train_models (--ticker T ... \| --all) [--models M ...] [--no-tune] [--jobs N]` | Trains the registered models for each ticker, then saves the fitted pipelines, test-set predictions and metrics as a new training run. |
+| `remove_tickers TICKER ... [--delete-files]` | Removes tickers and their training runs from the dashboard. With `--delete-files` it also deletes their cached prices and saved models. |
+
+Example of adding a stock: `fetch_prices NVDA --start 2010-01-01`, then `train_models --ticker NVDA`.
+Add a display name for it in `TICKER_NAMES` in `config.py`, or it shows as the raw symbol.
 
 ### Quality checks
 
@@ -80,15 +116,38 @@ DJANGO_DEBUG=false DJANGO_SECRET_KEY=... python web/manage.py runserver --insecu
 
 WhiteNoise serves static files, so `DEBUG=False` works without a separate web server.
 
+### Troubleshooting
+
+- **Charts don't reflect a code change.** Figures are cached in memory by the running server,
+  keyed by data and training run but not by code. Restart `runserver`.
+- **The page says "No price data yet" or "No trained models yet".** Run `fetch_prices`, then
+  `train_models --all`. The web app never downloads or trains during a request.
+- **Port 8000 is taken.** Run `python web/manage.py runserver 8001`. The preview config in
+  `.claude/launch.json` picks a free port automatically.
+
 ## Results, honestly
 
-Next-day direction for large UK banks is close to a coin flip. After the leakage fixes, test
-accuracy across five UK banks falls between roughly 46% and 54%, and ROC AUC between roughly
-0.49 and 0.55. The dashboard compares every model with the best naive guess (always predicting
-the more common direction) and with buy & hold, and it says so when the models don't beat them.
-The multi-ticker page picks each ticker's model by training-period CV, not by hindsight. The cost slider shows how quickly turnover wipes out any small
-edge. The point of the project is a sound methodology and clear communication, not a
-money-printing model.
+Next-day direction for the S&P 500 and large US tech stocks is close to a coin flip. On the latest
+run (test period mid-2021 to September 2026):
+
+- Test accuracy across the 35 model/ticker pairs falls between roughly 49% and 54%, and ROC AUC
+  between 0.48 and 0.53.
+- None of the models chosen by training-period CV beats the naive baseline on accuracy. The
+  baseline always predicts whichever direction was more common in the test period.
+- Some features are statistically detectable but economically tiny. For the S&P 500, 12 of 17
+  features clear the 95% noise band (short-term mean reversion in the index), but no feature on
+  any ticker has |ρ| above 0.07 with the next day's return. That explains under 0.5% of its
+  variance, which is too little to survive trading costs.
+
+The dashboard says all this on the page, not just in the README:
+
+- It compares every model with that naive baseline and with buy & hold, and flags when a model
+  doesn't beat them.
+- It picks each ticker's model by training-period CV, not by hindsight.
+- It shows how quickly trading costs wipe out any small edge.
+
+The point of the project is a sound methodology and clear communication, not a money-printing
+model. Numbers change slightly each time you refresh the data and retrain.
 
 ## Legacy issues fixed
 
@@ -117,10 +176,21 @@ comparable across time and across tickers. RSI now uses Wilder's smoothing (`alp
 ## Layout
 
 ```
-src/stockml/      config · data · features · models · evaluation · viz · experiment.py
-web/              Django project (config/) + dashboard app
-tests/core        library unit tests (incl. no-leakage and hand-computed backtests)
-tests/web         service and view tests
-notebooks/        exploration notebook importing from stockml
-legacy/           original notebook export (reference only)
+src/stockml/
+  config.py         universe, dates, windows, model/backtest/analysis settings, ticker names/units
+  data/             loader (yfinance + Parquet cache), cleaning (validation, outlier repair)
+  features/         technical indicators, next-day target, feature pipeline
+  models/           registry of sklearn pipelines, time-series training, joblib persistence
+  evaluation/       classification + risk metrics, backtest, cost sensitivity
+  analysis.py       descriptive stats for the explanatory charts
+  experiment.py     end-to-end train/evaluate loop over the model registry
+  viz/              theme (light palette + dark colour map) and chart builders
+web/
+  config/           settings (env-driven), urls, wsgi/asgi
+  dashboard/        models, services, views, forms, commands, templates, static JS/CSS
+tests/core          library unit tests (incl. no-leakage and hand-computed backtests)
+tests/web           service and view tests
+notebooks/          exploration notebook importing from stockml
+legacy/             original notebook export (reference only)
+data/               (git-ignored) cached prices, training runs, SQLite database
 ```

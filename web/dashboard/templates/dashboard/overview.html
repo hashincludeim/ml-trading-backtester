@@ -1,7 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load dashboard_tags %}
 {% block title %}Overview{% endblock %}
-{% block heading %}{{ form.ticker.value }} overview{% endblock %}
+{% block heading %}{% firstof ticker_name form.ticker.value %} overview{% endblock %}
 {% block intro %}Adjusted daily prices{% if range %} from {{ range.0|date:"j M Y" }} to {{ range.1|date:"j M Y" }}{% endif %}: the price path, how deep and long the losses ran, when the stock made or lost money, and how turbulent it was.{% endblock %}
 {% block content %}
   {% include "dashboard/_tiles.html" %}

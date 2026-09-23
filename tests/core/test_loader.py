@@ -12,6 +12,7 @@ from stockml.data.loader import (
     list_cached_tickers,
     load_prices,
     normalise_yfinance_frame,
+    save_prices,
 )
 from tests.conftest import make_prices
 
@@ -23,7 +24,7 @@ def _multiindex_frame(ticker: str) -> pd.DataFrame:
 
 
 def test_normalise_handles_multiindex_columns() -> None:
-    out = normalise_yfinance_frame(_multiindex_frame("BARC.L"), "BARC.L")
+    out = normalise_yfinance_frame(_multiindex_frame("AMZN"), "AMZN")
     assert list(out.columns) == ["Open", "High", "Low", "Close", "Volume"]
     assert out.index.name == "Date"
 
@@ -44,19 +45,19 @@ def test_normalise_missing_column_raises() -> None:
 
 def test_load_prices_without_cache_and_no_download_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        load_prices("BARC.L", DataConfig(data_dir=tmp_path))
+        load_prices("AMZN", DataConfig(data_dir=tmp_path))
 
 
 def test_load_prices_downloads_caches_and_reads_back(tmp_path: Path) -> None:
     cfg = DataConfig(data_dir=tmp_path)
-    with patch("stockml.data.loader.yf.download", return_value=_multiindex_frame("BARC.L")) as dl:
-        first = load_prices("BARC.L", cfg, allow_download=True)
-        second = load_prices("BARC.L", cfg, allow_download=True)
+    with patch("stockml.data.loader.yf.download", return_value=_multiindex_frame("AMZN")) as dl:
+        first = load_prices("AMZN", cfg, allow_download=True)
+        second = load_prices("AMZN", cfg, allow_download=True)
     assert dl.call_count == 1
     assert dl.call_args.kwargs["auto_adjust"] is True
     pd.testing.assert_frame_equal(first, second, check_freq=False)
-    assert cache_path("BARC.L", tmp_path).exists()
-    assert list_cached_tickers(tmp_path) == ["BARC.L"]
+    assert cache_path("AMZN", tmp_path).exists()
+    assert list_cached_tickers(tmp_path) == ["AMZN"]
 
 
 def test_download_empty_raises(tmp_path: Path) -> None:
@@ -65,3 +66,10 @@ def test_download_empty_raises(tmp_path: Path) -> None:
         pytest.raises(ValueError, match="No price data"),
     ):
         load_prices("NOPE", DataConfig(data_dir=tmp_path), allow_download=True)
+
+
+def test_index_symbol_round_trips_through_cache(tmp_path: Path) -> None:
+    save_prices(make_prices(5), "^GSPC", tmp_path)
+    assert cache_path("^GSPC", tmp_path).name == "^GSPC.parquet"
+    assert list_cached_tickers(tmp_path) == ["^GSPC"]
+    assert len(load_prices("^GSPC", DataConfig(data_dir=tmp_path))) == 5
