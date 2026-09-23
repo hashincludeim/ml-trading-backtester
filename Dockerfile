@@ -1,4 +1,4 @@
-# Image for Azure App Service (Web App for Containers), or any other container host.
+# Image for Google Cloud Run, or any other container host.
 # Prices and training results are produced beforehand (by .github/workflows/deploy.yml, or locally
 # with fetch_prices + train_models) and copied in as data/, so the container never downloads
 # data or trains models.
@@ -10,7 +10,7 @@ ENV PATH=/home/app/.local/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DJANGO_DEBUG=false \
-    DJANGO_ALLOWED_HOSTS=.azurewebsites.net,localhost,127.0.0.1 \
+    DJANGO_ALLOWED_HOSTS=.run.app,localhost,127.0.0.1 \
     DJANGO_SECURE_COOKIES=true \
     PORT=8000
 WORKDIR /home/app/stockml

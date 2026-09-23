@@ -1,7 +1,8 @@
 # Checks every push and pull request. On main (and each weekday evening after the US close) it
 # also downloads prices to today, retrains every model, bakes the data into the Docker image,
-# pushes it to GitHub Container Registry, and tells Azure App Service to pull it.
-# If Yahoo Finance or training fails, nothing is pushed and the site keeps yesterday's data.
+# pushes it to GitHub Container Registry, and deploys that image to Google Cloud Run.
+# If Yahoo Finance or training fails, nothing is deployed and the site keeps yesterday's data.
+# One-time Google Cloud setup: deploy/gcp-setup.sh (see the README).
 name: CI and deploy
 
 on:
@@ -37,9 +38,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write  # lets the job sign in to Google Cloud without a stored key
     env:
       DJANGO_SECRET_KEY: ci-build-only
-      AZURE_WEBHOOK_URL: ${{ secrets.AZURE_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -61,6 +62,29 @@ jobs:
           echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker build -t "$image:latest" -t "$image:${GITHUB_SHA::7}" .
           docker push --all-tags "$image"
-      - name: Tell Azure to pull the new image
-        if: env.AZURE_WEBHOOK_URL != ''
-        run: curl -fsS -X POST "$AZURE_WEBHOOK_URL" -o /dev/null
+          echo "IMAGE=$image:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        if: vars.GCP_PROJECT_ID != ''
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+        if: vars.GCP_PROJECT_ID != ''
+      - name: Deploy to Cloud Run
+        if: vars.GCP_PROJECT_ID != ''
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+        # Scales to zero when idle (free tier), at most 2 instances so costs stay capped. One
+        # gunicorn process with 4 threads keeps a single in-memory chart cache per instance.
+        run: |
+          gcloud run deploy stockml \
+            --project "$GCP_PROJECT_ID" --region "$GCP_REGION" \
+            --image "$IMAGE" --port 8000 \
+            --cpu 1 --memory 1Gi --cpu-boost \
+            --min-instances 0 --max-instances 2 --concurrency 4 \
+            --set-env-vars WEB_WORKERS=1,WEB_THREADS=4 \
+            --service-account "stockml-runtime@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
+            --allow-unauthenticated --quiet
+          echo "Live at: $(gcloud run services describe stockml --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" --format='value(status.url)')" >> "$GITHUB_STEP_SUMMARY"

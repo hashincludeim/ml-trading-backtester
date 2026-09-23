@@ -11,5 +11,6 @@ exec gunicorn config.wsgi \
     --chdir web \
     --bind "0.0.0.0:${PORT:-8000}" \
     --workers "${WEB_WORKERS:-2}" \
+    --threads "${WEB_THREADS:-1}" \
     --timeout 120 \
     --access-logfile -

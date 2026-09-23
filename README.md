@@ -116,38 +116,43 @@ DJANGO_DEBUG=false DJANGO_SECRET_KEY=... python web/manage.py runserver --insecu
 
 WhiteNoise serves static files, so `DEBUG=False` works without a separate web server.
 
-### Deploying (Azure App Service)
+### Deploying (Google Cloud Run)
 
-The live dashboard runs as a container on Azure App Service (Linux **B1**: 1 core, 1.75 GB,
-about $12/month). The container only serves pages.
+The live dashboard runs on Google Cloud Run. It scales to zero when nobody is visiting, so
+portfolio-level traffic stays inside the free tier (2 million requests, 180,000 vCPU-seconds and
+360,000 GiB-seconds a month). The container only serves pages.
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs the checks, downloads prices,
 trains the models, and builds the data into the image. It pushes the image to GitHub Container
-Registry (`ghcr.io/<owner>/<repo>`) and calls the App Service webhook so Azure pulls it. It runs
-on every push to `main` and each weekday at 22:30 UTC, after the US close. If the download or
-training fails, nothing is pushed and the site keeps the previous day's data.
+Registry (`ghcr.io/<owner>/<repo>`, public) and deploys it to Cloud Run. It runs on every push to
+`main` and each weekday at 22:30 UTC, after the US close. If the download or training fails,
+nothing is deployed and the site keeps the previous day's data. GitHub signs in to Google Cloud
+through Workload Identity Federation, so no key file is stored anywhere.
 
 One-time setup:
 
-1. Push to `main` once, so the workflow publishes the first image. Then, on GitHub, open the
-   package (profile → Packages → the repo name) → Package settings → set visibility to
-   **Public**, so Azure can pull it without credentials.
-2. In the Azure portal, create a **Web App**: Publish **Container**, OS **Linux**, pricing plan
-   **Basic B1**. On the Container tab, choose image source **Other container registries**,
-   access **Public**, server `https://ghcr.io`, image `<owner>/<repo>:latest`.
-3. In the web app, go to Settings → Environment variables and add `WEBSITES_PORT` = `8000`. Also
-   add `DJANGO_SECRET_KEY` = a long random string. Without it, a new key is generated at each
-   boot, which is harmless here because the app has no logins.
-4. In Settings → Configuration → General settings, turn on **Always on** and
-   **SCM Basic Auth Publishing Credentials** (the webhook needs basic auth). Also turn on
-   **HTTPS Only** there or under Settings → Custom domains, depending on your portal version.
-5. In Deployment Center, turn **Continuous deployment** on and copy the **Webhook URL**. In
-   this GitHub repo (Settings → Secrets and variables → Actions), save it as the secret
-   `AZURE_WEBHOOK_URL`.
+1. In the [Google Cloud console](https://console.cloud.google.com), create a project and link a
+   billing account (Cloud Run requires one, even within the free tier). Note the project ID.
+2. Open Cloud Shell (the terminal icon at the top right of the console), then download and run
+   the setup script:
 
-The app is served at `https://<app-name>.azurewebsites.net` (or the name Azure shows).
-`DJANGO_ALLOWED_HOSTS` defaults to `.azurewebsites.net`. For a custom domain, override it in
-the app's environment variables. Set a budget alert on the subscription (Cost Management →
-Budgets) so you notice if costs creep past the plan price.
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/<owner>/<repo>/main/deploy/gcp-setup.sh
+   bash gcp-setup.sh <project-id> <owner>/<repo>
+   ```
+
+   The region defaults to `europe-west2` (London). Pass a third argument to change it.
+3. The script prints four values. In this GitHub repo, go to Settings → Secrets and variables →
+   Actions → **Variables** and add them: `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`,
+   `GCP_SERVICE_ACCOUNT`.
+4. Run the workflow (Actions → CI and deploy → Run workflow). The run summary shows the live URL,
+   `https://stockml-<hash>.<region>.run.app`.
+5. Set a budget alert (Billing → Budgets & alerts), for example $5 a month with email alerts, so
+   any unexpected usage is caught early.
+
+Until the variables are set, the workflow still builds and pushes the image and skips the deploy
+step. The first visit after an idle period waits a few seconds while an instance starts.
+`DJANGO_ALLOWED_HOSTS` defaults to `.run.app`; for a custom domain, add it with
+`--set-env-vars` in the deploy step.
 
 To try the image locally, after `fetch_prices` and `train_models`:
 
@@ -232,6 +237,6 @@ tests/web           service and view tests
 notebooks/          exploration notebook importing from stockml
 legacy/             original notebook export (reference only)
 data/               (git-ignored) cached prices, training runs, SQLite database
-deploy/             container entrypoint (gunicorn), used by the Dockerfile
-.github/workflows/  CI checks, nightly data refresh, image build and deploy to Azure
+deploy/             container entrypoint (gunicorn) and one-time Google Cloud setup script
+.github/workflows/  CI checks, nightly data refresh, image build and deploy to Cloud Run
 ```
