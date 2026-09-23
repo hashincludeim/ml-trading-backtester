@@ -92,10 +92,14 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+DATABASE_PATH = env_path("DATABASE_PATH", DATA_DIR / "db.sqlite3")
+# data/ is git-ignored, so a fresh clone (or CI) has no folder for SQLite to create the file in.
+DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": env_path("DATABASE_PATH", DATA_DIR / "db.sqlite3"),
+        "NAME": DATABASE_PATH,
     }
 }
 
