@@ -10,3 +10,4 @@ staticfiles/
 .pytest_cache/
 .ipynb_checkpoints/
 .DS_Store
+claude.md
