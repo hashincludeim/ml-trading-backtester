@@ -88,6 +88,16 @@ def data_config() -> DataConfig:
     return DataConfig(data_dir=Path(settings.DATA_DIR))
 
 
+def stored_path(path: Path) -> str:
+    """A file path as saved in the database: relative to ``DATA_DIR``, so the folder can move."""
+    return str(Path(path).relative_to(data_config().data_dir))
+
+
+def data_path(stored: str) -> Path:
+    """Resolve a path saved by :func:`stored_path` (absolute paths from older rows pass through)."""
+    return data_config().data_dir / stored
+
+
 _MIDNIGHT = re.compile(r'T00:00:00(?:\.0+)?"')
 
 
@@ -531,7 +541,7 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
 
 
 def _run_predictions(run: TrainingRun) -> pd.DataFrame:
-    path = Path(run.predictions_path)
+    path = data_path(run.predictions_path)
     if not path.exists():
         raise NoDataError(f"Predictions file missing for {run}. Re-run train_models.")
     return pd.read_parquet(path)
@@ -789,7 +799,7 @@ def fetch_prices(
                 "first_date": prices.index[0].date(),
                 "last_date": prices.index[-1].date(),
                 "n_rows": len(prices),
-                "prices_path": str(cache_path(symbol, cfg.data_dir)),
+                "prices_path": stored_path(cache_path(symbol, cfg.data_dir)),
             },
         )
         out.append(ticker)
@@ -832,7 +842,7 @@ def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> Trainin
             "first_date": prices.index[0].date(),
             "last_date": prices.index[-1].date(),
             "n_rows": len(prices),
-            "prices_path": str(cache_path(symbol, data_config().data_dir)),
+            "prices_path": stored_path(cache_path(symbol, data_config().data_dir)),
         },
     )
     result = run_experiment(prices, cfg)
@@ -855,7 +865,7 @@ def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> Trainin
             n_train=len(split.X_train),
             n_test=len(split.X_test),
             baseline=result.baseline,
-            predictions_path=str(predictions_path),
+            predictions_path=stored_path(predictions_path),
         )
         for name, outcome in result.outcomes.items():
             model_path = save_model(outcome.trained.pipeline, run_dir / f"{name}.joblib")
@@ -874,7 +884,7 @@ def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> Trainin
                     feat: [float(row.importance_mean), float(row.importance_std)]
                     for feat, row in outcome.importance.iterrows()
                 },
-                model_path=str(model_path),
+                model_path=stored_path(model_path),
                 **ev.metrics,
             )
     cache.clear()

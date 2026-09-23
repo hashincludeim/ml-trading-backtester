@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.env
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.ipynb_checkpoints
+staticfiles
+legacy
+notebooks
+tests
+data/train.log
+# Fitted models are kept for reuse offline; the dashboard reads predictions and metrics only.
+data/runs/**/*.joblib

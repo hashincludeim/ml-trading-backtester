@@ -116,6 +116,45 @@ DJANGO_DEBUG=false DJANGO_SECRET_KEY=... python web/manage.py runserver --insecu
 
 WhiteNoise serves static files, so `DEBUG=False` works without a separate web server.
 
+### Deploying (Azure App Service)
+
+The live dashboard runs as a container on Azure App Service (Linux **B1**: 1 core, 1.75 GB,
+about $12/month). The container only serves pages.
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs the checks, downloads prices,
+trains the models, and builds the data into the image. It pushes the image to GitHub Container
+Registry (`ghcr.io/<owner>/<repo>`) and calls the App Service webhook so Azure pulls it. It runs
+on every push to `main` and each weekday at 22:30 UTC, after the US close. If the download or
+training fails, nothing is pushed and the site keeps the previous day's data.
+
+One-time setup:
+
+1. Push to `main` once, so the workflow publishes the first image. Then, on GitHub, open the
+   package (profile → Packages → the repo name) → Package settings → set visibility to
+   **Public**, so Azure can pull it without credentials.
+2. In the Azure portal, create a **Web App**: Publish **Container**, OS **Linux**, pricing plan
+   **Basic B1**. On the Container tab, choose image source **Other container registries**,
+   access **Public**, server `https://ghcr.io`, image `<owner>/<repo>:latest`.
+3. In the web app, go to Settings → Environment variables and add `WEBSITES_PORT` = `8000`. Also
+   add `DJANGO_SECRET_KEY` = a long random string. Without it, a new key is generated at each
+   boot, which is harmless here because the app has no logins.
+4. In Settings → Configuration → General settings, turn on **Always on** and
+   **SCM Basic Auth Publishing Credentials** (the webhook needs basic auth). Also turn on
+   **HTTPS Only** there or under Settings → Custom domains, depending on your portal version.
+5. In Deployment Center, turn **Continuous deployment** on and copy the **Webhook URL**. In
+   this GitHub repo (Settings → Secrets and variables → Actions), save it as the secret
+   `AZURE_WEBHOOK_URL`.
+
+The app is served at `https://<app-name>.azurewebsites.net` (or the name Azure shows).
+`DJANGO_ALLOWED_HOSTS` defaults to `.azurewebsites.net`. For a custom domain, override it in
+the app's environment variables. Set a budget alert on the subscription (Cost Management →
+Budgets) so you notice if costs creep past the plan price.
+
+To try the image locally, after `fetch_prices` and `train_models`:
+
+```bash
+docker build -t stockml . && docker run --rm -p 8000:8000 stockml
+```
+
 ### Troubleshooting
 
 - **Charts don't reflect a code change.** Figures are cached in memory by the running server,
@@ -193,4 +232,6 @@ tests/web           service and view tests
 notebooks/          exploration notebook importing from stockml
 legacy/             original notebook export (reference only)
 data/               (git-ignored) cached prices, training runs, SQLite database
+deploy/             container entrypoint (gunicorn), used by the Dockerfile
+.github/workflows/  CI checks, nightly data refresh, image build and deploy to Azure
 ```

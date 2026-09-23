@@ -85,8 +85,10 @@ def test_train_then_models_backtest_multi(data_dir: Path, db: None) -> None:
     assert Ticker.objects.get(symbol="TEST.L").runs.count() == 1
     assert TrainingRun.objects.count() == 1
     assert ModelResult.objects.filter(run=run).count() == 2
-    assert Path(run.predictions_path).exists()
-    assert all(Path(r.model_path).exists() for r in run.results.all())
+    # Stored relative to DATA_DIR, so the data folder can be built elsewhere and moved.
+    assert not Path(run.predictions_path).is_absolute()
+    assert (data_dir / run.predictions_path).exists()
+    assert all((data_dir / r.model_path).exists() for r in run.results.all())
 
     models = services.models_context("TEST.L", "linear_svc")
     assert models["selected"] == "linear_svc"
@@ -114,9 +116,15 @@ def test_train_then_models_backtest_multi(data_dir: Path, db: None) -> None:
     assert set(multi["charts"]) == {"heatmap", "best", "prices", "ticker_corr", "ticker_risk"}
 
 
+def test_data_path_resolves_relative_and_keeps_absolute(data_dir: Path) -> None:
+    assert services.stored_path(data_dir / "runs" / "x.parquet") == str(Path("runs/x.parquet"))
+    assert services.data_path("runs/x.parquet") == data_dir / "runs" / "x.parquet"
+    assert services.data_path("/elsewhere/x.parquet") == Path("/elsewhere/x.parquet")
+
+
 def test_remove_tickers_cascades_and_deletes_files(data_dir: Path, db: None) -> None:
     run = services.train_ticker("TEST.L", FAST)
-    run_dir = Path(run.predictions_path).parent
+    run_dir = services.data_path(run.predictions_path).parent
     assert services.remove_tickers(["TEST.L", "NOPE"], delete_files=True) == ["TEST.L"]
     assert not Ticker.objects.filter(symbol="TEST.L").exists()
     assert TrainingRun.objects.count() == 0

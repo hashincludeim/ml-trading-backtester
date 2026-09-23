@@ -23,6 +23,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Production WSGI server for the Docker image (runserver is for development only).
+deploy = ["gunicorn>=22"]
 dev = [
     "pytest>=8",
     "pytest-django>=4.8",
