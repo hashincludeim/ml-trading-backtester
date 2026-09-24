@@ -17,7 +17,7 @@
   <section class="card">
     <h2>Summary by ticker</h2>
     <p class="sub">Naive accuracy = always predicting the more common direction in the test period. The model for each ticker is picked by <em>training-period</em> CV ROC AUC, so its test accuracy and Sharpe (5 bp cost, long/short) are genuinely out-of-sample.</p>
-    <div class="table-wrap">
+    <div class="table-wrap" data-key-cols="1,4,6,7,8">
       <table>
         <thead><tr><th>Ticker</th><th>Test period</th><th>Test days</th><th>Naive accuracy</th><th>CV-selected model</th><th>Its test accuracy</th><th>Strategy Sharpe</th><th>Buy &amp; hold Sharpe</th></tr></thead>
         <tbody>

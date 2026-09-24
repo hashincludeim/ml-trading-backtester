@@ -71,6 +71,10 @@ def _line_trace(x: pd.Index, y: pd.Series | np.ndarray, **kwargs: object) -> go.
     return trace
 
 
+# Name given to market-event labels; dashboard.js looks for it to number them on phones.
+EVENT_ANNOTATION = "event"
+
+
 def _ref_line(fig: go.Figure, y: float, text: str | None = None) -> None:
     """Dotted horizontal reference line with an optional left-aligned label.
 
@@ -90,13 +94,27 @@ def _ref_line(fig: go.Figure, y: float, text: str | None = None) -> None:
     )
 
 
+def _epoch_ms(ts: pd.Timestamp) -> int:
+    """Milliseconds since 1970-01-01 for a tz-naive timestamp, as plotly.js expects."""
+    return int(ts.value // 1_000_000)
+
+
 def _add_events(
     fig: go.Figure, events: Sequence[tuple[str, str]], index: pd.Index, xref: str = "x"
 ) -> None:
-    """Annotate dated market events that fall inside ``index`` with thin vertical markers."""
+    """Annotate dated market events that fall inside ``index`` with thin vertical markers.
+
+    Labels are named ``EVENT_ANNOTATION`` so the browser can shorten them on narrow screens.
+    The x-axis autorange is clamped to the data, because labels near the right edge would
+    otherwise stretch it past the last date.
+    """
     if len(index) == 0:
         return
     first, last = pd.Timestamp(index[0]), pd.Timestamp(index[-1])
+    axis = "xaxis" + xref.removeprefix("x")
+    # plotly.js only honours these limits on date axes as epoch milliseconds, not date strings.
+    limits = {"minallowed": _epoch_ms(first), "maxallowed": _epoch_ms(last)}
+    fig.update_layout({axis: {"autorangeoptions": limits}})
     visible = [(pd.Timestamp(d), label) for d, label in events if first <= pd.Timestamp(d) <= last]
     for i, (ts, label) in enumerate(visible):
         fig.add_shape(
@@ -116,6 +134,7 @@ def _add_events(
             xref=xref,
             yref="y domain",
             text=label,
+            name=EVENT_ANNOTATION,
             showarrow=False,
             xanchor="left",
             yanchor="top",

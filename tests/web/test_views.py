@@ -141,3 +141,17 @@ def test_empty_state_when_nothing_fetched(client: Client) -> None:
     with patch.object(services, "available_tickers", return_value=[]):
         resp = client.get(reverse("dashboard:overview"))
     assert b"No price data yet" in resp.content
+
+
+def test_pages_are_gzipped_for_clients_that_accept_it(client: Client) -> None:
+    with patch.object(services, "overview_context", return_value=_ctx("price", stats=[])):
+        resp = client.get(reverse("dashboard:overview"), HTTP_ACCEPT_ENCODING="gzip")
+    assert resp.status_code == 200
+    assert resp["Content-Encoding"] == "gzip"
+
+
+def test_tables_mark_their_key_columns_for_phones(client: Client) -> None:
+    ctx = _ctx("roc", rows=[], baseline={}, selected="linear_svc", insights={})
+    with patch.object(services, "models_context", return_value=ctx):
+        resp = client.get(reverse("dashboard:models"), {"ticker": "AMZN"})
+    assert b'data-key-cols="1,4,8,9"' in resp.content

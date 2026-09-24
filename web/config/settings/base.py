@@ -63,6 +63,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Pages embed their chart data as JSON (up to ~2 MB); gzip cuts that several-fold on mobile
+    # data. Safe from BREACH here: every form is GET and pages carry no CSRF tokens or secrets.
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

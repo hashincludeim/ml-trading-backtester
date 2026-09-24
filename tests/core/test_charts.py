@@ -50,6 +50,14 @@ def test_price_volume_chart_downsamples_with_overlays_and_events() -> None:
     assert "SMA 50" in {t.name for t in fig.data}
     labels = [a.text for a in fig.layout.annotations]
     assert "Lehman" in labels and "Too old" not in labels
+    events = [a for a in fig.layout.annotations if a.name == charts.EVENT_ANNOTATION]
+    assert [a.text for a in events] == ["Lehman"]
+    # Event labels near the right edge must not stretch the time axis past the data.
+    limits = fig.layout.xaxis.autorangeoptions
+    # Epoch milliseconds: plotly.js ignores date strings here and falls back to 2000-2001.
+    assert isinstance(limits.minallowed, int) and isinstance(limits.maxallowed, int)
+    assert prices.index[0] <= pd.Timestamp(limits.minallowed, unit="ms")
+    assert pd.Timestamp(limits.maxallowed, unit="ms") <= prices.index[-1]
 
 
 def test_indicator_chart_has_three_panels() -> None:
