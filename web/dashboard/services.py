@@ -36,6 +36,7 @@ from stockml.config import (
     config_hash,
     currency_symbol,
     price_unit,
+    target_labels,
     ticker_label,
 )
 from stockml.data.cleaning import clean_prices
@@ -153,10 +154,10 @@ def available_tickers() -> list[str]:
     return _universe_order(symbols or list_cached_tickers(data_config().data_dir))
 
 
-def trained_tickers() -> list[str]:
-    """Tickers with at least one training run."""
+def trained_tickers(target: str = "direction") -> list[str]:
+    """Tickers with at least one training run for ``target``."""
     return _universe_order(
-        list(Ticker.objects.filter(runs__isnull=False).distinct().values_list("symbol", flat=True))
+        list(Ticker.objects.filter(runs__target=target).distinct().values_list("symbol", flat=True))
     )
 
 
@@ -417,22 +418,22 @@ def exploration_context(ticker: str) -> dict[str, Any]:
     return _cached(f"explore:{ticker}:{config_hash(cfg)}:{_prices_version(ticker)}", build)
 
 
-def latest_run(ticker: str) -> TrainingRun:
-    """Most recent training run for a ticker.
+def latest_run(ticker: str, target: str = "direction") -> TrainingRun:
+    """Most recent training run for a ticker and prediction target.
 
     Raises:
-        NoDataError: If the ticker has never been trained.
+        NoDataError: If the ticker has never been trained for ``target``.
     """
     run = (
-        TrainingRun.objects.filter(ticker__symbol=ticker)
+        TrainingRun.objects.filter(ticker__symbol=ticker, target=target)
         .prefetch_related("results")
         .order_by("-created_at")
         .first()
     )
     if run is None:
         raise NoDataError(
-            f"No trained models for {ticker}. Run: python web/manage.py train_models "
-            f"--ticker {ticker}"
+            f"No {target_labels(target).title.lower()} models for {ticker}. Run: python "
+            f"web/manage.py train_models --ticker {ticker} --target {target}"
         )
     return run
 
@@ -521,9 +522,33 @@ def _walk_forward_section(run: TrainingRun, rows: list[dict[str, Any]]) -> dict[
     }
 
 
-def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
+def _target_note(run: TrainingRun, rows: list[dict[str, Any]]) -> str:
+    """Closing sentence of the Models callout: what "good" means for this target."""
+    if run.target != "volatility" or not run.heuristic or not rows:
+        return "Daily direction is close to a coin flip, and these results reflect that honestly."
+    rule_auc = float(run.heuristic["roc_auc"])
+    n_better = sum(row["roc_auc"] > rule_auc for row in rows)
+    window = int(run.config.get("target", {}).get("persistence_window", 0))
+    best = rows[0]  # rows are sorted by test AUC
+    low, high = _auc_interval(best["roc_auc"], run.results.get(model_name=best["name"]).confusion)
+    margin, half_width = best["roc_auc"] - rule_auc, (high - low) / 2
+    verdict = (
+        "larger than the uncertainty, so the models add something beyond simple clustering"
+        if margin > half_width
+        else "within the uncertainty, so the models may only be rediscovering clustering"
+    )
+    return (
+        f"Volatility clusters, so the fair benchmark is a rule with no model: predict a big move "
+        f"when the last {window} days were rougher than a typical day. It scores ROC AUC "
+        f"{rule_auc:.3f}, and {_count(n_better)} of {len(rows)} models beat it. The best margin "
+        f"is {margin:+.3f} against an interval of ±{half_width:.3f}: {verdict}."
+    )
+
+
+def models_context(ticker: str, selected: str | None, target: str = "direction") -> dict[str, Any]:
     """Model comparison table plus charts on accuracy, stability, separation and importance."""
-    run = latest_run(ticker)
+    run = latest_run(ticker, target)
+    labels = target_labels(run.target)
     acfg = AnalysisConfig()
 
     def build() -> dict[str, Any]:
@@ -559,18 +584,28 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
             "model_choices": [(n, model_label(n)) for n in results],
             "n_beat": n_beat,
             "naive_accuracy": naive_accuracy(run),
-            "naive_direction": "up" if run.baseline["accuracy"] >= 0.5 else "down",
+            "naive_direction": (
+                labels.positive if run.baseline["accuracy"] >= 0.5 else labels.negative
+            ).lower(),
+            "target": run.target,
+            "target_labels": labels,
+            "target_note": _target_note(run, rows),
+            "heuristic": run.heuristic or None,
             "n_models": len(rows),
             "best_auc": rows[0] if rows else None,
             "charts": {
                 "cv": figure_json(charts.cv_scores_chart(cv, 0.5, baseline_label="Coin flip")),
                 "roc": figure_json(charts.roc_curves_chart(rocs)),
-                "confusion": figure_json(charts.confusion_matrix_chart(chosen.confusion, name)),
+                "confusion": figure_json(
+                    charts.confusion_matrix_chart(chosen.confusion, name, labels)
+                ),
                 "importance": figure_json(charts.feature_importance_chart(importance, name)),
                 "rolling": figure_json(charts.rolling_accuracy_chart(hits, window)),
                 "folds": figure_json(charts.cv_folds_chart(folds)),
                 "scores": figure_json(
-                    charts.score_distribution_chart(preds[f"{name}_score"], preds["y_true"], name)
+                    charts.score_distribution_chart(
+                        preds[f"{name}_score"], preds["y_true"], name, target=labels
+                    )
                 ),
             },
             "insights": {
@@ -585,13 +620,14 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
                 ),
                 "scores": (
                     f"{model_label(name)} has a test ROC AUC of {chosen.roc_auc:.3f}: pick a "
-                    f"random up day and a random down day, and it ranks the up day higher only "
-                    f"{chosen.roc_auc:.0%} of the time (50% = guessing)."
+                    f"random {labels.positive.lower()} day and a random "
+                    f"{labels.negative.lower()} day, and it ranks the {labels.positive.lower()} "
+                    f"day higher {chosen.roc_auc:.0%} of the time (50% = guessing)."
                 ),
             },
         }
 
-    return _cached(f"models:{ticker}:{run.pk}:{selected}", build)
+    return _cached(f"models:{ticker}:{run.pk}:{selected}", build)  # run.pk implies the target
 
 
 def _run_predictions(run: TrainingRun) -> pd.DataFrame:
@@ -910,6 +946,8 @@ def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> Trainin
     with transaction.atomic():
         run = TrainingRun.objects.create(
             ticker=ticker,
+            target=cfg.target.kind,
+            heuristic=result.heuristic,
             config_hash=digest,
             config=_jsonable(asdict(cfg)),
             train_start=split.X_train.index[0].date(),

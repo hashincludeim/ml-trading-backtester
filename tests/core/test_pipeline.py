@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from stockml.config import FeatureConfig
+from stockml.config import FeatureConfig, TargetConfig
 from stockml.features.pipeline import build_feature_frame, compute_features, compute_indicators
 from tests.conftest import make_prices
 
@@ -48,3 +48,14 @@ def test_compute_features_does_not_mutate(prices: pd.DataFrame) -> None:
     before = prices.copy()
     compute_features(prices)
     pd.testing.assert_frame_equal(prices, before)
+
+
+def test_volatility_target_drops_its_warm_up() -> None:
+    prices = make_prices(400, seed=9)
+    target = TargetConfig(kind="volatility", volatility_window=100)
+    X, y = build_feature_frame(prices, target=target)
+    assert X.index.equals(y.index)
+    assert X.index[0] >= prices.index[100]
+    assert set(y.unique()) == {0, 1}
+    X_dir, _ = build_feature_frame(prices)
+    pd.testing.assert_frame_equal(X, X_dir.loc[X.index])  # same features, different question

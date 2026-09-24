@@ -59,6 +59,11 @@ UP_COLOR = "#1baf7a"
 DOWN_COLOR = "#e34948"
 UP_FILL = "rgba(27, 175, 122, 0.12)"
 DOWN_FILL = "rgba(227, 73, 72, 0.14)"
+# Volatility target classes: orange for a big move, blue for a quiet day (not good/bad colours).
+BIG_MOVE_COLOR = "#eb6834"
+QUIET_COLOR = "#2a78d6"
+BIG_MOVE_FILL = "rgba(235, 104, 52, 0.12)"
+QUIET_FILL = "rgba(42, 120, 214, 0.12)"
 PRICE_COLOR = "#2a78d6"
 BAND_FILL = "rgba(42, 120, 214, 0.08)"
 REFERENCE_LINE = "#8a8984"
@@ -94,6 +99,8 @@ DARK_COLOR_MAP: dict[str, str] = {
     UP_FILL: "rgba(25, 158, 112, 0.22)",
     DOWN_FILL: "rgba(230, 103, 103, 0.24)",
     BAND_FILL: "rgba(57, 135, 229, 0.16)",
+    BIG_MOVE_FILL: "rgba(217, 89, 38, 0.22)",
+    QUIET_FILL: "rgba(57, 135, 229, 0.22)",
     **dict(zip(CATEGORICAL, CATEGORICAL_DARK, strict=True)),
     # sequential: dark near zero, bright at the top
     "#f3f8fe": "#1f2733",

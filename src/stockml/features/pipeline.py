@@ -7,8 +7,8 @@ import logging
 import numpy as np
 import pandas as pd
 
-from stockml.config import FeatureConfig
-from stockml.features.target import make_price_rise_target
+from stockml.config import FeatureConfig, TargetConfig
+from stockml.features.target import make_target
 from stockml.features.technical import (
     bollinger,
     ema,
@@ -96,24 +96,28 @@ def compute_features(prices: pd.DataFrame, config: FeatureConfig | None = None) 
 
 
 def build_feature_frame(
-    prices: pd.DataFrame, config: FeatureConfig | None = None
+    prices: pd.DataFrame,
+    config: FeatureConfig | None = None,
+    target: TargetConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Return model-ready ``(X, y)`` with warm-up rows and the final unlabeled row removed.
 
     Args:
         prices: Cleaned OHLCV frame indexed by date.
         config: Feature settings.
+        target: What to predict; defaults to next-day direction (1 = next close higher).
 
     Returns:
-        ``X`` with columns ``config.feature_columns`` and ``y`` (int, 1 = next close higher),
-        sharing the same chronologically sorted index. Row ``t`` of ``X`` uses information
-        available at the close of day ``t`` only.
+        ``X`` with columns ``config.feature_columns`` and ``y`` (int), sharing the same
+        chronologically sorted index. Row ``t`` of ``X`` uses information available at the
+        close of day ``t`` only. Rows where the target is undefined (its warm-up, final row)
+        are dropped.
     """
     cfg = config or FeatureConfig()
     feats = compute_features(prices, cfg)
-    target = make_price_rise_target(prices["Close"])
-    valid = feats.notna().all(axis=1) & target.notna()
+    labels = make_target(prices["Close"], target)
+    valid = feats.notna().all(axis=1) & labels.notna()
     X = feats.loc[valid]
-    y = target.loc[valid].astype(int)
+    y = labels.loc[valid].astype(int)
     logger.debug("build_feature_frame: %d usable rows of %d", len(X), len(prices))
     return X, y

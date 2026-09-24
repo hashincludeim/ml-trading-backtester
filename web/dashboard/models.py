@@ -24,6 +24,7 @@ class TrainingRun(models.Model):
     ticker = models.ForeignKey(Ticker, on_delete=models.CASCADE, related_name="runs")
     created_at = models.DateTimeField(auto_now_add=True)
     config_hash = models.CharField(max_length=32)
+    target = models.CharField(max_length=20, default="direction", db_index=True)
     config = models.JSONField(default=dict)
     train_start = models.DateField()
     train_end = models.DateField()
@@ -31,7 +32,10 @@ class TrainingRun(models.Model):
     test_end = models.DateField()
     n_train = models.PositiveIntegerField()
     n_test = models.PositiveIntegerField()
-    baseline = models.JSONField(default=dict, help_text="Always-up classifier metrics")
+    baseline = models.JSONField(default=dict, help_text="Always-positive classifier metrics")
+    heuristic = models.JSONField(
+        default=dict, blank=True, help_text="No-model rule metrics (volatility target only)"
+    )
     predictions_path = models.CharField(max_length=500)
 
     class Meta:
@@ -39,7 +43,9 @@ class TrainingRun(models.Model):
         get_latest_by = "created_at"
 
     def __str__(self) -> str:
-        return f"{self.ticker} @ {self.created_at:%Y-%m-%d %H:%M} ({self.config_hash})"
+        return (
+            f"{self.ticker} {self.target} @ {self.created_at:%Y-%m-%d %H:%M} ({self.config_hash})"
+        )
 
 
 class ModelResult(models.Model):

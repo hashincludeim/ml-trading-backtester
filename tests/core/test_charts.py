@@ -6,10 +6,12 @@ import plotly.graph_objects as go
 import pytest
 
 from stockml import analysis
+from stockml.config import TARGET_LABELS
 from stockml.evaluation.metrics import RocCurve
 from stockml.features.pipeline import build_feature_frame, compute_indicators
 from stockml.viz import charts
 from stockml.viz.theme import (
+    BIG_MOVE_COLOR,
     CATEGORICAL,
     CATEGORICAL_DARK,
     DARK_COLOR_MAP,
@@ -245,3 +247,19 @@ def test_walk_forward_chart_pairs_static_and_walk_forward_intervals() -> None:
     assert [s.x0 for s in fig.layout.shapes] == [0.5]
     assert not fig.layout.annotations  # no "new text" placeholder from add_vline
     assert "63 trading days" in fig.layout.title.subtitle.text
+
+
+def test_class_charts_use_target_wording_and_colours() -> None:
+    vol = TARGET_LABELS["volatility"]
+    cm = charts.confusion_matrix_chart([[10, 5], [3, 12]], "svm_rbf", vol)
+    assert list(cm.data[0].y) == ["Actual Quiet", "Actual Big move"]
+    assert list(charts.confusion_matrix_chart([[1, 0], [0, 1]], "svm_rbf").data[0].x) == [
+        "Predicted Down",
+        "Predicted Up",
+    ]
+    scores = pd.Series(np.linspace(-1, 1, 100))
+    truth = pd.Series([0, 1] * 50)
+    sd = charts.score_distribution_chart(scores, truth, "svm_rbf", target=vol)
+    assert sd.data[0].name.startswith("Actual: big move")
+    assert sd.data[0].line.color == BIG_MOVE_COLOR
+    assert sd.data[0].fillcolor in DARK_COLOR_MAP and sd.data[1].fillcolor in DARK_COLOR_MAP

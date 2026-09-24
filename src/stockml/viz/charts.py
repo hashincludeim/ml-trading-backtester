@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from stockml.analysis import DrawdownEpisode, binned_density, shared_edges
-from stockml.config import FeatureConfig
+from stockml.config import TARGET_LABELS, FeatureConfig, TargetLabels
 from stockml.evaluation.metrics import RocCurve
 from stockml.models.registry import model_label
 from stockml.viz.theme import (
@@ -23,6 +23,8 @@ from stockml.viz.theme import (
     BENCHMARK_COLOR,
     BENCHMARK_DASH,
     BENCHMARK_FILL,
+    BIG_MOVE_COLOR,
+    BIG_MOVE_FILL,
     CATEGORICAL,
     CONTROL_ACTIVE,
     CONTROL_BG,
@@ -31,6 +33,8 @@ from stockml.viz.theme import (
     DOWN_FILL,
     MODEL_COLORS,
     PRICE_COLOR,
+    QUIET_COLOR,
+    QUIET_FILL,
     REFERENCE_LINE,
     SEQUENTIAL_BLUE,
     SURFACE,
@@ -1227,20 +1231,31 @@ def walk_forward_chart(frame: pd.DataFrame, retrain_every: int) -> go.Figure:
     )
 
 
-def confusion_matrix_chart(matrix: list[list[int]], name: str) -> go.Figure:
+DIRECTION = TARGET_LABELS["direction"]
+# (positive class, negative class) as (line colour, fill) per target kind.
+_CLASS_STYLES: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {
+    "direction": ((UP_COLOR, UP_FILL), (DOWN_COLOR, DOWN_FILL)),
+    "volatility": ((BIG_MOVE_COLOR, BIG_MOVE_FILL), (QUIET_COLOR, QUIET_FILL)),
+}
+
+
+def confusion_matrix_chart(
+    matrix: list[list[int]], name: str, target: TargetLabels = DIRECTION
+) -> go.Figure:
     """Confusion-matrix heatmap with counts and row percentages.
 
     Args:
         matrix: ``[[TN, FP], [FN, TP]]`` with rows = actual, columns = predicted.
         name: Registry name of the model.
+        target: Class names for the prediction target.
     """
     cm = np.asarray(matrix, dtype=float)
     totals = cm.sum(axis=1, keepdims=True)
     row_pct = cm / np.where(totals == 0, 1, totals)
-    labels = ["Down", "Up"]
+    labels = [target.negative, target.positive]
     text = [
         [
-            f"<b>{int(cm[i, j]):,}</b><br>{row_pct[i, j]:.0%} of actual {labels[i].lower()}"
+            f"<b>{int(cm[i, j]):,}</b><br>{row_pct[i, j]:.0%} of actual<br>{labels[i].lower()}"
             for j in range(2)
         ]
         for i in range(2)
@@ -1269,8 +1284,8 @@ def confusion_matrix_chart(matrix: list[list[int]], name: str) -> go.Figure:
     return apply_theme(
         fig,
         f"Confusion matrix: {model_label(name)}",
-        "Predicted next-day move",
-        "Actual next-day move",
+        "Predicted next day",
+        "Actual next day",
         height=400,
         subtitle="Shading = share of each actual outcome. A good model is dark on the diagonal.",
     )
@@ -1320,14 +1335,19 @@ def feature_importance_chart(importance: pd.DataFrame, name: str, top_n: int = 1
 
 
 def score_distribution_chart(
-    scores: pd.Series, y_true: pd.Series, name: str, bins: int = 40
+    scores: pd.Series,
+    y_true: pd.Series,
+    name: str,
+    bins: int = 40,
+    target: TargetLabels = DIRECTION,
 ) -> go.Figure:
     """Distribution of a model's test-set scores, split by what actually happened next day."""
     edges = shared_edges([scores], bins)
+    (pos_color, pos_fill), (neg_color, neg_fill) = _CLASS_STYLES[target.kind]
     fig = go.Figure()
     for cls, label, color, fill in (
-        (1, "Actually went up", UP_COLOR, UP_FILL),
-        (0, "Actually went down", DOWN_COLOR, DOWN_FILL),
+        (1, f"Actual: {target.positive.lower()}", pos_color, pos_fill),
+        (0, f"Actual: {target.negative.lower()}", neg_color, neg_fill),
     ):
         values = scores[y_true == cls].clip(edges[0], edges[-1])
         centres, density = binned_density(values, edges)
@@ -1346,10 +1366,10 @@ def score_distribution_chart(
     apply_theme(
         fig,
         f"How well did {model_label(name)} separate the days?",
-        "Model score (higher = more bullish)",
+        f"Model score (higher = more likely {target.positive.lower()})",
         "Density",
         height=420,
-        subtitle="If the model could tell days apart, the green and red shapes would separate.",
+        subtitle="If the model could tell the days apart, the two shapes would separate.",
     )
     fig.update_xaxes(showspikes=False)
     return fig.update_layout(hovermode="x unified")

@@ -83,7 +83,9 @@ class ModelsView(TickerPageView):
     requires_training = True
 
     def get_page(self, data: dict[str, Any]) -> dict[str, Any]:
-        return services.models_context(data["ticker"], data.get("model") or None)
+        return services.models_context(
+            data["ticker"], data.get("model") or None, data.get("target") or "direction"
+        )
 
 
 class BacktestView(TickerPageView):

@@ -9,7 +9,7 @@ from django.test import override_settings
 
 from dashboard import services
 from dashboard.models import ModelResult, Ticker, TrainingRun
-from stockml.config import ExperimentConfig, ModelConfig
+from stockml.config import ExperimentConfig, ModelConfig, TargetConfig
 from stockml.data.loader import save_prices
 from tests.conftest import make_prices
 
@@ -160,3 +160,28 @@ def test_models_page_without_walk_forward(data_dir: Path, db: None) -> None:
     run = services.train_ticker("TEST.L", config)
     assert all(r.walk_forward == {} for r in run.results.all())
     assert services.models_context("TEST.L", None)["walk_forward"] is None
+
+
+def test_volatility_runs_are_separate_from_direction_runs(data_dir: Path, db: None) -> None:
+    config = replace(FAST, target=TargetConfig(kind="volatility", volatility_window=60))
+    run = services.train_ticker("TEST.L", config)
+    assert run.target == "volatility"
+    assert set(run.heuristic) >= {"accuracy", "roc_auc"}
+    # Backtest and multi-ticker pages only read direction runs.
+    assert services.trained_tickers() == []
+    assert services.trained_tickers("volatility") == ["TEST.L"]
+    with pytest.raises(services.NoDataError, match="--target direction"):
+        services.latest_run("TEST.L")
+
+    models = services.models_context("TEST.L", None, "volatility")
+    assert models["target"] == "volatility"
+    assert models["heuristic"]["roc_auc"] == run.heuristic["roc_auc"]
+    assert "rule with no model" in models["target_note"]
+    assert "best margin is" in models["target_note"]
+    assert "big move day" in models["insights"]["scores"]
+    assert "Actual Big move" in models["charts"]["confusion"]
+
+    direction = services.train_ticker("TEST.L", FAST)
+    assert services.latest_run("TEST.L").pk == direction.pk
+    assert services.latest_run("TEST.L", "volatility").pk == run.pk
+    assert services.models_context("TEST.L", None)["heuristic"] is None

@@ -22,6 +22,7 @@ from stockml.evaluation.metrics import (
     evaluate_predictions,
 )
 from stockml.features.pipeline import build_feature_frame
+from stockml.features.target import volatility_persistence_score
 from stockml.models.training import (
     Split,
     TrainedModel,
@@ -50,12 +51,17 @@ class ModelOutcome:
 
 @dataclass(frozen=True)
 class ExperimentResult:
-    """Outputs of :func:`run_experiment`."""
+    """Outputs of :func:`run_experiment`.
+
+    ``baseline`` is the always-positive classifier. ``heuristic`` holds test metrics for a
+    no-model rule when the target has one (the volatility target's recent-volatility rule).
+    """
 
     split: Split
     outcomes: dict[str, ModelOutcome] = field(default_factory=dict)
     baseline: dict[str, float] = field(default_factory=dict)
     refit_dates: tuple[pd.Timestamp, ...] = ()
+    heuristic: dict[str, float] = field(default_factory=dict)
 
     def predictions_frame(self) -> pd.DataFrame:
         """Test-set frame with ``y_true`` plus ``{model}_pred`` and ``{model}_score`` columns.
@@ -79,13 +85,13 @@ def run_experiment(
 
     Args:
         prices: Cleaned OHLCV frame.
-        config: Feature and model settings.
+        config: Feature, model and target settings.
 
     Returns:
         An :class:`ExperimentResult` whose outcomes share one chronological split.
     """
     cfg = config or ExperimentConfig()
-    X, y = build_feature_frame(prices, cfg.features)
+    X, y = build_feature_frame(prices, cfg.features, cfg.target)
     split = chronological_split(X, y, cfg.model.test_size)
     logger.info(
         "Split: train %s..%s (%d), test %s..%s (%d)",
@@ -119,9 +125,16 @@ def run_experiment(
             )
         outcomes[name] = ModelOutcome(trained, evaluation, importance, walk_forward)
         logger.info("%s test accuracy %.3f", name, evaluation.metrics["accuracy"])
+    heuristic: dict[str, float] = {}
+    if cfg.target.kind == "volatility":
+        score = volatility_persistence_score(prices["Close"], cfg.target).loc[split.X_test.index]
+        rule = (score > 1.0).astype(int).rename("prediction")
+        heuristic = evaluate_predictions(split.y_test, rule, score).metrics
+        logger.info("Recent-volatility rule ROC AUC %.3f", heuristic["roc_auc"])
     return ExperimentResult(
         split=split,
         outcomes=outcomes,
         baseline=always_up_metrics(split.y_test),
         refit_dates=refit_dates,
+        heuristic=heuristic,
     )

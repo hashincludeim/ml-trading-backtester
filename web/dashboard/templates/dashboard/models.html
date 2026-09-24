@@ -6,6 +6,11 @@
 {% block controls %}
   <form class="controls" method="get" aria-label="Model options">
     <div class="field"><label for="id_ticker">Ticker</label>{{ form.ticker }}</div>
+    <div class="field"><label for="id_target">Predict</label>
+      <select name="target" id="id_target" data-autosubmit>
+        {% for value, label in form.fields.target.choices %}<option value="{{ value }}"{% if value == target %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
     <div class="field"><label for="id_model">Detail model</label>
       <select name="model" id="id_model" data-autosubmit>
         {% for value, label in model_choices %}<option value="{{ value }}"{% if value == selected %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -19,19 +24,19 @@
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
     <p><strong>{{ n_beat }} of {{ n_models }}</strong> models beat the best naive guess, which is to always predict "{{ naive_direction }}" ({{ naive_accuracy|pct }} test accuracy).
       {% if best_auc %}The best ROC AUC is {{ best_auc.roc_auc|num }} ({{ best_auc.label }}); 0.5 means no better than chance.{% endif %}
-      Daily direction is close to a coin flip, and these results reflect that honestly.</p>
+      {{ target_note }}</p>
   </div>
 
   <section class="card">
     <h2>Test-set metrics</h2>
-    <p class="sub">CV figures are the mean ± std over expanding-window folds of the training period. Test figures come from the same fitted pipeline that is backtested.</p>
+    <p class="sub">{{ target_labels.question }} CV figures are the mean ± std over expanding-window folds of the training period. Test figures come from the same fitted pipeline{% if target == "direction" %} that is backtested{% endif %}.</p>
     <div class="table-wrap" data-key-cols="1,4,8,9">
       <table>
         <thead><tr><th>Model</th><th>CV accuracy</th><th>CV AUC</th><th>Test accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>ROC AUC</th><th>vs naive</th><th>Tuned params</th></tr></thead>
         <tbody>
           {% for r in rows %}
             <tr>
-              <td><span class="swatch" data-swatch="{{ r.color }}" style="background: {{ r.color }}"></span><a href="?ticker={{ form.ticker.value|urlencode }}&model={{ r.name }}">{{ r.label }}</a></td>
+              <td><span class="swatch" data-swatch="{{ r.color }}" style="background: {{ r.color }}"></span><a href="?ticker={{ form.ticker.value|urlencode }}&target={{ target }}&model={{ r.name }}">{{ r.label }}</a></td>
               <td>{{ r.cv_mean|pct }} <span class="muted">± {{ r.cv_std|pct }}</span></td>
               <td>{{ r.cv_auc|num }}</td>
               <td>{{ r.accuracy|pct }}</td>
@@ -44,10 +49,17 @@
             </tr>
           {% endfor %}
           <tr class="benchmark">
-            <td><span class="swatch dashed"></span>Always up (baseline)</td>
+            <td><span class="swatch dashed"></span>Always {{ target_labels.positive|lower }} (baseline)</td>
             <td>–</td><td>–</td>
             <td>{{ baseline.accuracy|pct }}</td><td>{{ baseline.precision|pct }}</td><td>{{ baseline.recall|pct }}</td><td>{{ baseline.f1|num }}</td><td>{{ baseline.roc_auc|num }}</td><td></td><td></td>
           </tr>
+          {% if heuristic %}
+          <tr class="benchmark">
+            <td><span class="swatch dashed"></span>Recent-volatility rule (no model)</td>
+            <td>–</td><td>–</td>
+            <td>{{ heuristic.accuracy|pct }}</td><td>{{ heuristic.precision|pct }}</td><td>{{ heuristic.recall|pct }}</td><td>{{ heuristic.f1|num }}</td><td>{{ heuristic.roc_auc|num }}</td><td></td><td></td>
+          </tr>
+          {% endif %}
         </tbody>
       </table>
     </div>
@@ -70,9 +82,9 @@
     {% if walk_forward %}
       {% plotly_chart walk_forward.chart "chart-walk-forward" %}
       {% include "dashboard/_insight.html" with text=walk_forward.insight %}
-      <p class="insight">The models above are fitted once on the training period. Walk-forward keeps the same tuned settings but refits every {{ walk_forward.retrain_every }} trading days ({{ walk_forward.n_refits }} times) on all earlier days, then predicts only the next block. The backtest still uses the model trained once.</p>
+      <p class="insight">The models above are fitted once on the training period. Walk-forward keeps the same tuned settings but refits every {{ walk_forward.retrain_every }} trading days ({{ walk_forward.n_refits }} times) on all earlier days, then predicts only the next block.{% if target == "direction" %} The backtest still uses the model trained once.{% endif %}</p>
     {% else %}
-      <p class="muted">This run was trained before walk-forward evaluation was added. Re-run <code>python web/manage.py train_models --ticker {{ run.ticker.symbol }}</code> to add it.</p>
+      <p class="muted">This run was trained before walk-forward evaluation was added. Re-run <code>python web/manage.py train_models --ticker {{ run.ticker.symbol }} --target {{ target }}</code> to add it.</p>
     {% endif %}
   </section>
 

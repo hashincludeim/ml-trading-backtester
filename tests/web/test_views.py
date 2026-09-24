@@ -93,7 +93,19 @@ def test_models(client: Client) -> None:
     with patch.object(services, "models_context", return_value=ctx) as svc:
         resp = client.get(reverse("dashboard:models"), {"model": "svm_rbf"})
     assert resp.status_code == 200
-    svc.assert_called_once_with("AMZN", "svm_rbf")
+    svc.assert_called_once_with("AMZN", "svm_rbf", "direction")
+
+
+def test_models_passes_target_and_rejects_unknown(client: Client) -> None:
+    ctx = _ctx("roc", rows=[], baseline={}, insights={}, target="volatility")
+    with patch.object(services, "models_context", return_value=ctx) as svc:
+        resp = client.get(reverse("dashboard:models"), {"target": "volatility"})
+    assert resp.status_code == 200
+    svc.assert_called_once_with("AMZN", None, "volatility")
+    assert b'<option value="volatility" selected>' in resp.content
+    with patch.object(services, "models_context") as svc:
+        client.get(reverse("dashboard:models"), {"target": "nonsense"})
+    svc.assert_not_called()
 
 
 def test_models_walk_forward_section(client: Client) -> None:

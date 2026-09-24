@@ -125,6 +125,70 @@ class FeatureConfig:
         )
 
 
+TargetKind = Literal["direction", "volatility"]
+
+
+@dataclass(frozen=True)
+class TargetLabels:
+    """Wording for one prediction target, used by charts and the dashboard.
+
+    Attributes:
+        kind: Target key.
+        title: Short name, e.g. ``"Next-day direction"``.
+        negative: Name of class 0, e.g. ``"Down"``.
+        positive: Name of class 1, e.g. ``"Up"``.
+        question: The yes/no question the models answer.
+    """
+
+    kind: TargetKind
+    title: str
+    negative: str
+    positive: str
+    question: str
+
+
+TARGET_LABELS: dict[str, TargetLabels] = {
+    "direction": TargetLabels(
+        "direction", "Next-day direction", "Down", "Up", "Will tomorrow's close be higher?"
+    ),
+    "volatility": TargetLabels(
+        "volatility",
+        "Next-day volatility",
+        "Quiet",
+        "Big move",
+        "Will tomorrow move more than a typical day of the past year?",
+    ),
+}
+
+
+def target_labels(kind: str) -> TargetLabels:
+    """Wording for a target kind (unknown kinds fall back to direction)."""
+    return TARGET_LABELS.get(kind, TARGET_LABELS["direction"])
+
+
+@dataclass(frozen=True)
+class TargetConfig:
+    """What the models predict.
+
+    Attributes:
+        kind: ``"direction"``: 1 if the next close is higher. ``"volatility"``: 1 if the next
+            day's absolute log return exceeds the median absolute return of the trailing
+            ``volatility_window`` days (known at the close of day *t*).
+        volatility_window: Trailing days that define a "typical" absolute move.
+        persistence_window: Days of recent absolute returns used by the no-model baseline rule
+            for the volatility target.
+    """
+
+    kind: TargetKind = "direction"
+    volatility_window: int = TRADING_DAYS_PER_YEAR
+    persistence_window: int = 5
+
+    @property
+    def labels(self) -> TargetLabels:
+        """Wording for this target."""
+        return target_labels(self.kind)
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     """Training settings shared by every model in the registry.
@@ -213,6 +277,7 @@ class ExperimentConfig:
 
     features: FeatureConfig = field(default_factory=FeatureConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    target: TargetConfig = field(default_factory=TargetConfig)
 
 
 def config_hash(*configs: Any) -> str:

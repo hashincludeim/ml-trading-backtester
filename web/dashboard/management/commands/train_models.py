@@ -6,18 +6,27 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from dashboard import services
-from stockml.config import ExperimentConfig, ModelConfig
+from stockml.config import TARGET_LABELS, ExperimentConfig, ModelConfig, TargetConfig
 from stockml.models.registry import MODEL_REGISTRY
 
 
 class Command(BaseCommand):
-    help = "Train every registered model for one or more tickers and store the results."
+    help = (
+        "Train every registered model for one or more tickers and store the results, for the "
+        "direction target, the volatility target, or both (the default)."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--ticker", action="append", default=[], help="Repeatable")
         parser.add_argument("--all", action="store_true", help="Train every cached ticker")
         parser.add_argument("--models", nargs="+", choices=sorted(MODEL_REGISTRY))
         parser.add_argument("--no-tune", action="store_true", help="Skip grid search")
+        parser.add_argument(
+            "--target",
+            choices=[*TARGET_LABELS, "all"],
+            default="all",
+            help="What to predict (default: all targets)",
+        )
         parser.add_argument("--jobs", type=int, default=1, help="Parallel jobs inside sklearn")
         parser.add_argument(
             "--no-walk-forward", action="store_true", help="Skip walk-forward evaluation"
@@ -43,9 +52,14 @@ class Command(BaseCommand):
         )
         if options["models"]:
             model_cfg = replace(model_cfg, models=tuple(options["models"]))
-        config = ExperimentConfig(model=model_cfg)
-        for ticker in tickers:
-            self.stdout.write(f"Training {len(model_cfg.models)} models for {ticker}…")
+        kinds = list(TARGET_LABELS) if options["target"] == "all" else [options["target"]]
+        jobs = [(t, kind) for t in tickers for kind in kinds]
+        for ticker, kind in jobs:
+            config = ExperimentConfig(model=model_cfg, target=TargetConfig(kind=kind))  # type: ignore[arg-type]
+            self.stdout.write(
+                f"Training {len(model_cfg.models)} models for {ticker} "
+                f"({TARGET_LABELS[kind].title.lower()})…"
+            )
             try:
                 run = services.train_ticker(ticker, config)
             except services.NoDataError as exc:
@@ -53,10 +67,12 @@ class Command(BaseCommand):
             results = list(run.results.all())
             best = max(results, key=lambda r: r.roc_auc)
             summary = (
-                f"{ticker}: run {run.pk}, test {run.test_start}–{run.test_end}, "
+                f"{ticker} {kind}: run {run.pk}, test {run.test_start}–{run.test_end}, "
                 f"best AUC {best.roc_auc:.3f} ({best.model_name}), "
-                f"always-up accuracy {run.baseline['accuracy']:.3f}"
+                f"always-positive accuracy {run.baseline['accuracy']:.3f}"
             )
+            if run.heuristic:
+                summary += f", no-model rule AUC {run.heuristic['roc_auc']:.3f}"
             if model_cfg.walk_forward:
                 wf_best = max(results, key=lambda r: r.walk_forward["metrics"]["roc_auc"])
                 summary += (

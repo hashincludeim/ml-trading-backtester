@@ -6,10 +6,12 @@ from typing import Any
 
 from django import forms
 
+from stockml.config import TARGET_LABELS
 from stockml.models.registry import MODEL_REGISTRY
 
 DATE_WIDGET = forms.DateInput(attrs={"type": "date"})
 MODEL_CHOICES = [(name, spec.label) for name, spec in MODEL_REGISTRY.items()]
+TARGET_CHOICES = [(kind, labels.title) for kind, labels in TARGET_LABELS.items()]
 
 
 class TickerForm(forms.Form):
@@ -34,6 +36,7 @@ class DateRangeForm(TickerForm):
 
 
 class ModelSelectForm(TickerForm):
+    target = forms.ChoiceField(choices=TARGET_CHOICES, required=False, label="Predict")
     model = forms.ChoiceField(choices=MODEL_CHOICES, required=False)
 
 
