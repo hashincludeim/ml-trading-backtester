@@ -96,6 +96,20 @@ def test_models(client: Client) -> None:
     svc.assert_called_once_with("AMZN", "svm_rbf")
 
 
+def test_models_walk_forward_section(client: Client) -> None:
+    section = {"chart": FAKE_CHART, "insight": "Refitting 3 times", "retrain_every": 63}
+    ctx = _ctx("roc", rows=[], baseline={}, insights={}, walk_forward=section)
+    with patch.object(services, "models_context", return_value=ctx):
+        resp = client.get(reverse("dashboard:models"))
+    assert b"chart-walk-forward" in resp.content
+    assert b"Refitting 3 times" in resp.content
+    ctx["walk_forward"] = None
+    with patch.object(services, "models_context", return_value=ctx):
+        resp = client.get(reverse("dashboard:models"))
+    assert b"chart-walk-forward" not in resp.content
+    assert b"trained before walk-forward evaluation" in resp.content
+
+
 def test_backtest_parses_cost_and_mode(client: Client) -> None:
     ctx = _ctx(
         "equity",

@@ -12,6 +12,7 @@ def test_run_experiment_small() -> None:
             cv_splits=3,
             tune=False,
             importance_repeats=2,
+            walk_forward=False,
         )
     )
     result = run_experiment(make_prices(400, seed=5), cfg)
@@ -26,3 +27,25 @@ def test_run_experiment_small() -> None:
     ]
     assert frame.index.equals(result.split.X_test.index)
     assert 0 <= result.baseline["accuracy"] <= 1
+    assert result.outcomes["linear_svc"].walk_forward is None
+    assert result.refit_dates == ()
+
+
+def test_run_experiment_walk_forward_scores_the_same_test_rows() -> None:
+    cfg = ExperimentConfig(
+        model=ModelConfig(
+            models=("logistic_regression",),
+            cv_splits=3,
+            tune=False,
+            importance_repeats=2,
+            retrain_every=20,
+        )
+    )
+    result = run_experiment(make_prices(400, seed=5), cfg)
+    wf = result.outcomes["logistic_regression"].walk_forward
+    assert wf is not None
+    assert wf.predictions.index.equals(result.split.X_test.index)
+    assert len(result.refit_dates) == -(-len(result.split.X_test) // 20)
+    assert result.refit_dates[0] == result.split.X_test.index[0]
+    frame = result.predictions_frame()
+    assert {"logistic_regression_wf_pred", "logistic_regression_wf_score"} <= set(frame.columns)

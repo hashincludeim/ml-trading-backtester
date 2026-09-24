@@ -1152,6 +1152,81 @@ def roc_curves_chart(curves: Mapping[str, RocCurve]) -> go.Figure:
     return fig
 
 
+WALK_FORWARD_LABEL = "Walk-forward"
+TRAINED_ONCE_LABEL = "Trained once"
+
+
+def walk_forward_chart(frame: pd.DataFrame, retrain_every: int) -> go.Figure:
+    """Test ROC AUC per model, trained once vs refitted walk-forward, with 95% intervals.
+
+    Args:
+        frame: Index = registry names (plotted top to bottom); columns ``static_auc``,
+            ``static_low``, ``static_high``, ``wf_auc``, ``wf_low`` and ``wf_high``.
+        retrain_every: Walk-forward refit interval in trading days (for the subtitle).
+    """
+    positions = np.arange(len(frame), dtype=float)
+    labels = [model_label(n) for n in frame.index]
+    fig = go.Figure()
+    for prefix, name, offset, marker in (
+        (
+            "static",
+            TRAINED_ONCE_LABEL,
+            -0.17,
+            {"symbol": "circle-open", "color": BENCHMARK_COLOR, "line": {"width": 2}},
+        ),
+        ("wf", WALK_FORWARD_LABEL, 0.17, {"symbol": "circle", "color": CATEGORICAL[0]}),
+    ):
+        auc = frame[f"{prefix}_auc"]
+        fig.add_trace(
+            go.Scatter(
+                x=auc,
+                y=positions + offset,
+                mode="markers",
+                name=name,
+                marker={"size": 10, **marker},
+                error_x={
+                    "type": "data",
+                    "symmetric": False,
+                    "array": frame[f"{prefix}_high"] - auc,
+                    "arrayminus": auc - frame[f"{prefix}_low"],
+                    "color": marker["color"],
+                    "thickness": 1.5,
+                    "width": 3,
+                },
+                customdata=np.column_stack(
+                    [labels, frame[f"{prefix}_low"], frame[f"{prefix}_high"]]
+                ),
+                hovertemplate="%{customdata[0]}: AUC %{x:.3f} "
+                "(95% CI %{customdata[1]:.3f}–%{customdata[2]:.3f})"
+                f"<extra>{name}</extra>",
+            )
+        )
+    lows = pd.concat([frame["static_low"], frame["wf_low"]])
+    highs = pd.concat([frame["static_high"], frame["wf_high"]])
+    lo = min(float(lows.min()), 0.5) - 0.01
+    hi = max(float(highs.max()), 0.5) + 0.01
+    # Unlabelled: a text label would collide with the intervals; the subtitle explains it.
+    fig.add_vline(x=0.5, line={"dash": "dot", "width": 1, "color": REFERENCE_LINE})
+    fig.update_layout(hovermode="closest")
+    fig.update_xaxes(range=[lo, hi], showspikes=False, tickformat=".2f")
+    fig.update_yaxes(
+        tickvals=positions,
+        ticktext=labels,
+        range=[len(frame) - 0.5, -0.5],  # first model at the top
+        showgrid=False,
+        showspikes=False,
+    )
+    return apply_theme(
+        fig,
+        "Test ROC AUC: trained once vs walk-forward",
+        "ROC AUC (95% interval)",
+        None,
+        height=140 + 52 * len(frame),
+        subtitle=f"Walk-forward refits every {retrain_every} trading days on all earlier data. "
+        "Intervals crossing the dotted 0.5 line are indistinguishable from chance.",
+    )
+
+
 def confusion_matrix_chart(matrix: list[list[int]], name: str) -> go.Figure:
     """Confusion-matrix heatmap with counts and row percentages.
 

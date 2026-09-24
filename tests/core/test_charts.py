@@ -217,3 +217,31 @@ def test_equity_break_even_label_sits_at_one_pound_on_log_axis() -> None:
     fig = charts.equity_curves_chart(pd.DataFrame({"svm_rbf": [1, 2, 4.0]}, index=idx), 0)
     label = next(a for a in fig.layout.annotations if a.text.startswith("Break-even"))
     assert label.y == 0  # log10(1)
+
+
+def test_walk_forward_chart_pairs_static_and_walk_forward_intervals() -> None:
+    frame = pd.DataFrame(
+        {
+            "static_auc": [0.52, 0.49],
+            "static_low": [0.49, 0.46],
+            "static_high": [0.55, 0.52],
+            "wf_auc": [0.53, 0.50],
+            "wf_low": [0.50, 0.47],
+            "wf_high": [0.56, 0.53],
+        },
+        index=["svm_rbf", "logistic_regression"],
+    )
+    fig = charts.walk_forward_chart(frame, 63)
+    _assert_themed(fig)
+    assert [t.name for t in fig.data] == [charts.TRAINED_ONCE_LABEL, charts.WALK_FORWARD_LABEL]
+    wf = fig.data[1]
+    assert list(wf.x) == [0.53, 0.50]
+    assert list(wf.error_x.array) == pytest.approx([0.03, 0.03])
+    assert list(wf.error_x.arrayminus) == pytest.approx([0.03, 0.03])
+    assert list(fig.layout.yaxis.ticktext) == ["SVM (RBF)", "Logistic Regression"]
+    assert fig.layout.yaxis.range[0] > fig.layout.yaxis.range[1]  # first model on top
+    lo, hi = fig.layout.xaxis.range
+    assert lo < 0.46 and hi > 0.56  # intervals and the 0.5 line stay in view
+    assert [s.x0 for s in fig.layout.shapes] == [0.5]
+    assert not fig.layout.annotations  # no "new text" placeholder from add_vline
+    assert "63 trading days" in fig.layout.title.subtitle.text

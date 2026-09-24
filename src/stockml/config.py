@@ -136,6 +136,9 @@ class ModelConfig:
         pca_components: If set, insert PCA between the scaler and every estimator.
         tune: Run a small time-series grid search for models that define a grid.
         importance_repeats: Permutation-importance shuffles per feature.
+        walk_forward: Also score each model walk-forward over the test period, refitting it
+            on an expanding window of all earlier rows.
+        retrain_every: Walk-forward refit interval in trading days (63 is about a quarter).
         models: Registry names to train.
     """
 
@@ -145,6 +148,8 @@ class ModelConfig:
     pca_components: int | None = None
     tune: bool = True
     importance_repeats: int = 5
+    walk_forward: bool = True
+    retrain_every: int = 63
     n_jobs: int = 1
     models: tuple[str, ...] = (
         "logistic_regression",

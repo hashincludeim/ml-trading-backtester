@@ -65,6 +65,17 @@
     <section class="card">{% plotly_chart charts.rolling "chart-rolling-acc" %}{% include "dashboard/_insight.html" with text=insights.rolling %}</section>
   </div>
 
+  <div class="section-head"><h2>Walk-forward check</h2><p>Would the result hold up if each model were refitted as new data arrived?</p></div>
+  <section class="card">
+    {% if walk_forward %}
+      {% plotly_chart walk_forward.chart "chart-walk-forward" %}
+      {% include "dashboard/_insight.html" with text=walk_forward.insight %}
+      <p class="insight">The models above are fitted once on the training period. Walk-forward keeps the same tuned settings but refits every {{ walk_forward.retrain_every }} trading days ({{ walk_forward.n_refits }} times) on all earlier days, then predicts only the next block. The backtest still uses the model trained once.</p>
+    {% else %}
+      <p class="muted">This run was trained before walk-forward evaluation was added. Re-run <code>python web/manage.py train_models --ticker {{ run.ticker.symbol }}</code> to add it.</p>
+    {% endif %}
+  </section>
+
   <div class="section-head"><h2>Inside {{ selected_label }}</h2><p>Pick another model from the selector or the table above</p></div>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.scores "chart-scores" %}{% include "dashboard/_insight.html" with text=insights.scores %}</section>

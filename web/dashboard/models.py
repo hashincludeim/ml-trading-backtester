@@ -58,6 +58,11 @@ class ModelResult(models.Model):
     confusion = models.JSONField(default=list)
     roc = models.JSONField(default=dict, help_text="{fpr, tpr, auc}")
     importance = models.JSONField(default=dict, help_text="{feature: [mean, std]}")
+    walk_forward = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Walk-forward test {metrics, confusion}; empty for runs trained without it",
+    )
     model_path = models.CharField(max_length=500)
 
     class Meta:

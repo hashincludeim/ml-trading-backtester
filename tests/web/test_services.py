@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,14 @@ def test_train_then_models_backtest_multi(data_dir: Path, db: None) -> None:
 
     models = services.models_context("TEST.L", "linear_svc")
     assert models["selected"] == "linear_svc"
+    stored = ModelResult.objects.get(run=run, model_name="linear_svc").walk_forward
+    assert set(stored) == {"metrics", "confusion"}
+    assert sum(map(sum, stored["confusion"])) == run.n_test
+    wf = models["walk_forward"]
+    assert wf["retrain_every"] == FAST.model.retrain_every
+    assert wf["n_refits"] == -(-run.n_test // FAST.model.retrain_every)
+    assert '"Walk-forward"' in wf["chart"]
+    assert "Refitting" in wf["insight"]
     assert {"rolling", "folds", "scores"} <= set(models["charts"])
     assert {r["name"] for r in models["rows"]} == {"logistic_regression", "linear_svc"}
 
@@ -144,3 +153,10 @@ def test_format_price_units() -> None:
     assert services._format_price(1234.5, "USD") == "$1,234.50"
     assert services._format_price(158.3, "GBX") == "158.30p"
     assert services._format_price(7706.03, "points") == "7,706.03"
+
+
+def test_models_page_without_walk_forward(data_dir: Path, db: None) -> None:
+    config = ExperimentConfig(model=replace(FAST.model, walk_forward=False))
+    run = services.train_ticker("TEST.L", config)
+    assert all(r.walk_forward == {} for r in run.results.all())
+    assert services.models_context("TEST.L", None)["walk_forward"] is None

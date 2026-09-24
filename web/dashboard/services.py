@@ -52,6 +52,7 @@ from stockml.evaluation.metrics import (
     RocCurve,
     annualised_return,
     annualised_volatility,
+    auc_confidence_interval,
     max_drawdown,
     rolling_sharpe,
     sharpe,
@@ -468,6 +469,58 @@ def _model_rows(run: TrainingRun) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: row["roc_auc"], reverse=True)
 
 
+def _auc_interval(auc: float, confusion: list[list[int]]) -> tuple[float, float]:
+    """95% interval for a test AUC; class counts come from the confusion matrix rows."""
+    return auc_confidence_interval(auc, n_pos=sum(confusion[1]), n_neg=sum(confusion[0]))
+
+
+def _walk_forward_section(run: TrainingRun, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Trained-once vs walk-forward AUC per model, or ``None`` for runs trained without it."""
+    results = {r.model_name: r for r in run.results.all()}
+    if not all(r.walk_forward for r in results.values()):
+        return None
+    records = {}
+    for row in rows:  # same order as the table: best test AUC first
+        r = results[row["name"]]
+        wf_auc = float(r.walk_forward["metrics"]["roc_auc"])
+        static_low, static_high = _auc_interval(r.roc_auc, r.confusion)
+        wf_low, wf_high = _auc_interval(wf_auc, r.walk_forward["confusion"])
+        records[r.model_name] = {
+            "static_auc": r.roc_auc,
+            "static_low": static_low,
+            "static_high": static_high,
+            "wf_auc": wf_auc,
+            "wf_low": wf_low,
+            "wf_high": wf_high,
+            "wf_accuracy": float(r.walk_forward["metrics"]["accuracy"]),
+        }
+    frame = pd.DataFrame(records).T.astype(float)
+    retrain_every = int(run.config.get("model", {}).get("retrain_every", 0))
+    n_refits = -(-run.n_test // retrain_every) if retrain_every else 0
+    change = frame["wf_auc"] - frame["static_auc"]
+    static_sig = int((frame["static_low"] > 0.5).sum())
+    wf_sig = int((frame["wf_low"] > 0.5).sum())
+    half_width = float(((frame["wf_high"] - frame["wf_low"]) / 2).median())
+    return {
+        "chart": figure_json(charts.walk_forward_chart(frame, retrain_every)),
+        "retrain_every": retrain_every,
+        "n_refits": n_refits,
+        "insight": (
+            f"Refitting {n_refits} times changed test AUC by {change.mean():+.3f} on average "
+            f"(range {change.min():+.3f} to {change.max():+.3f}). With {run.n_test:,} test days "
+            f"the 95% interval is about ±{half_width:.3f} wide, so "
+            f"{_count(static_sig)} of {len(frame)} models trained once and "
+            f"{_count(wf_sig)} walk-forward are reliably better than a coin flip."
+            + (
+                f" All {len(frame)} models are tested on the same days and largely agree, so "
+                "one or two clearing the bar by luck is expected."
+                if static_sig or wf_sig
+                else ""
+            )
+        ),
+    }
+
+
 def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
     """Model comparison table plus charts on accuracy, stability, separation and importance."""
     run = latest_run(ticker)
@@ -498,6 +551,7 @@ def models_context(ticker: str, selected: str | None) -> dict[str, Any]:
         unstable = sum(1 for v in folds.values() if v and min(v) < 0.5 < max(v))
         return {
             "run": run,
+            "walk_forward": _walk_forward_section(run, rows),
             "rows": rows,
             "baseline": run.baseline,
             "selected": name,
@@ -885,6 +939,11 @@ def train_ticker(symbol: str, config: ExperimentConfig | None = None) -> Trainin
                     for feat, row in outcome.importance.iterrows()
                 },
                 model_path=stored_path(model_path),
+                walk_forward=(
+                    {"metrics": wf.metrics, "confusion": wf.confusion}
+                    if (wf := outcome.walk_forward) is not None
+                    else {}
+                ),
                 **ev.metrics,
             )
     cache.clear()

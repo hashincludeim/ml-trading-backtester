@@ -7,11 +7,13 @@ import pytest
 from stockml.evaluation.metrics import (
     always_up_metrics,
     annualised_return,
+    auc_confidence_interval,
     calmar,
     classification_metrics,
     drawdown,
     equity_curve,
     evaluate_model,
+    evaluate_predictions,
     max_drawdown,
     rolling_sharpe,
     sharpe,
@@ -75,3 +77,24 @@ def test_evaluate_model_is_consistent() -> None:
     assert (ev.predictions.to_numpy() == pipe.predict(X.iloc[200:])).all()
     assert sum(map(sum, ev.confusion)) == len(X) - 200
     assert ev.metrics["roc_auc"] == pytest.approx(ev.roc.auc)
+
+
+def test_auc_confidence_interval_hand_computed() -> None:
+    # AUC 0.5 with 100 of each class: Q1 = Q2 = 1/3, var = (0.25 + 2 * 99 * (1/3 - 0.25)) / 1e4
+    se = np.sqrt((0.25 + 2 * 99 * (1 / 3 - 0.25)) / 10_000)
+    low, high = auc_confidence_interval(0.5, 100, 100)
+    assert low == pytest.approx(0.5 - 1.96 * se)
+    assert high == pytest.approx(0.5 + 1.96 * se)
+    narrow = auc_confidence_interval(0.5, 1000, 1000)
+    assert narrow[1] - narrow[0] < high - low
+    assert auc_confidence_interval(0.99, 5, 5)[1] <= 1.0
+    assert all(np.isnan(v) for v in auc_confidence_interval(0.6, 0, 10))
+
+
+def test_evaluate_predictions_matches_evaluate_model() -> None:
+    X, y = build_feature_frame(make_prices(300, seed=4))
+    pipe = build_pipeline("logistic_regression").fit(X, y)
+    direct = evaluate_model(pipe, X, y)
+    rebuilt = evaluate_predictions(y, direct.predictions, direct.scores)
+    assert rebuilt.metrics == direct.metrics
+    assert rebuilt.confusion == direct.confusion

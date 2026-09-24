@@ -86,6 +86,26 @@ def roc_points(y_true: pd.Series, y_score: pd.Series) -> RocCurve:
     )
 
 
+def evaluate_predictions(
+    y_true: pd.Series, predictions: pd.Series, scores: pd.Series
+) -> ModelEvaluation:
+    """Metrics, confusion matrix and ROC curve for out-of-sample predictions.
+
+    Args:
+        y_true: Actual classes (0/1).
+        predictions: Predicted classes, aligned with ``y_true``.
+        scores: Continuous scores for ranking (P(up) or a decision function).
+    """
+    cm = confusion_matrix(y_true, predictions, labels=[0, 1])
+    return ModelEvaluation(
+        predictions=predictions,
+        scores=scores,
+        metrics=classification_metrics(y_true, predictions, scores),
+        confusion=[[int(v) for v in row] for row in cm],
+        roc=roc_points(y_true, scores),
+    )
+
+
 def evaluate_model(pipeline: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) -> ModelEvaluation:
     """Evaluate one *already fitted* pipeline on the test set.
 
@@ -93,15 +113,36 @@ def evaluate_model(pipeline: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) 
     the ROC curve, so every artefact describes one model.
     """
     preds = pd.Series(pipeline.predict(X_test).astype(int), index=X_test.index, name="prediction")
-    scores = decision_scores(pipeline, X_test)
-    cm = confusion_matrix(y_test, preds, labels=[0, 1])
-    return ModelEvaluation(
-        predictions=preds,
-        scores=scores,
-        metrics=classification_metrics(y_test, preds, scores),
-        confusion=[[int(v) for v in row] for row in cm],
-        roc=roc_points(y_test, scores),
+    return evaluate_predictions(y_test, preds, decision_scores(pipeline, X_test))
+
+
+def auc_confidence_interval(
+    auc: float, n_pos: int, n_neg: int, z: float = 1.96
+) -> tuple[float, float]:
+    """Normal-approximation confidence interval for ROC AUC (Hanley & McNeil, 1982).
+
+    The standard error depends only on the AUC and the class counts, so it can be computed from
+    stored results. It assumes independent observations; daily returns are close to that, but
+    volatility clustering means the true interval is somewhat wider.
+
+    Args:
+        auc: Observed area under the ROC curve.
+        n_pos: Number of positive (up) days.
+        n_neg: Number of negative (down) days.
+        z: Normal quantile; 1.96 gives a 95% interval.
+
+    Returns:
+        ``(low, high)`` clipped to ``[0, 1]``; ``(nan, nan)`` if either class is empty.
+    """
+    if n_pos < 1 or n_neg < 1 or not np.isfinite(auc):
+        return float("nan"), float("nan")
+    q1 = auc / (2.0 - auc)
+    q2 = 2.0 * auc**2 / (1.0 + auc)
+    variance = (auc * (1.0 - auc) + (n_pos - 1) * (q1 - auc**2) + (n_neg - 1) * (q2 - auc**2)) / (
+        n_pos * n_neg
     )
+    se = float(np.sqrt(max(variance, 0.0)))
+    return max(0.0, auc - z * se), min(1.0, auc + z * se)
 
 
 def always_up_metrics(y_true: pd.Series) -> dict[str, float]:
