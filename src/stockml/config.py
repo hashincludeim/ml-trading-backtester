@@ -88,11 +88,16 @@ class FeatureConfig:
 
     Price-level indicators (SMA/EMA values) are converted to ratios against the close so the
     features are comparable across time and across tickers.
+
+    ``volatility_window`` is the short realised-volatility window; ``long_volatility_windows``
+    add slower measures (about a month and a quarter), and the short/longest ratio flags regime
+    shifts, e.g. a week that is rougher than the quarter around it.
     """
 
     sma_windows: tuple[int, ...] = (3, 10, 30)
     ema_windows: tuple[int, ...] = (3, 10, 30)
     volatility_window: int = 5
+    long_volatility_windows: tuple[int, ...] = (21, 63)
     rsi_window: int = 14
     rsi_overbought: float = 70.0
     rsi_oversold: float = 30.0
@@ -106,6 +111,11 @@ class FeatureConfig:
     volume_window: int = 20
 
     @property
+    def volatility_ratio_column(self) -> str:
+        """Name of the short / longest volatility ratio feature, e.g. ``vol_ratio_5_63``."""
+        return f"vol_ratio_{self.volatility_window}_{max(self.long_volatility_windows)}"
+
+    @property
     def feature_columns(self) -> tuple[str, ...]:
         """Named model inputs, in a stable order."""
         return (
@@ -115,6 +125,8 @@ class FeatureConfig:
             *(f"sma_{w}_ratio" for w in self.sma_windows),
             *(f"ema_{w}_ratio" for w in self.ema_windows),
             f"volatility_{self.volatility_window}",
+            *(f"volatility_{w}" for w in self.long_volatility_windows),
+            self.volatility_ratio_column,
             "ema_bullish",
             "ema_diff_pct",
             f"rsi_{self.rsi_window}",

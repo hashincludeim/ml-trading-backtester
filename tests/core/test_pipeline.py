@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from stockml.config import FeatureConfig, TargetConfig
 from stockml.features.pipeline import build_feature_frame, compute_features, compute_indicators
@@ -59,3 +61,18 @@ def test_volatility_target_drops_its_warm_up() -> None:
     assert set(y.unique()) == {0, 1}
     X_dir, _ = build_feature_frame(prices)
     pd.testing.assert_frame_equal(X, X_dir.loc[X.index])  # same features, different question
+
+
+def test_longer_volatility_features() -> None:
+    prices = make_prices(300, seed=4)
+    cfg = FeatureConfig()
+    assert cfg.volatility_ratio_column == "vol_ratio_5_63"
+    X, _ = build_feature_frame(prices, cfg)
+    returns = np.log(prices["Close"] / prices["Close"].shift(1))
+    t = X.index[-1]
+    window_63 = returns.loc[:t].iloc[-63:]
+    assert X.loc[t, "volatility_63"] == pytest.approx(window_63.std())
+    assert X.loc[t, "volatility_21"] == pytest.approx(window_63.iloc[-21:].std())
+    ratio = X["volatility_5"] / X["volatility_63"]
+    pd.testing.assert_series_equal(X["vol_ratio_5_63"], ratio, check_names=False)
+    assert X.index[0] >= prices.index[63]  # the longest window sets the warm-up

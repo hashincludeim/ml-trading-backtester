@@ -81,7 +81,12 @@ def compute_features(prices: pd.DataFrame, config: FeatureConfig | None = None) 
         feats[f"sma_{w}_ratio"] = close / ind[f"sma_{w}"] - 1.0
     for w in cfg.ema_windows:
         feats[f"ema_{w}_ratio"] = close / ind[f"ema_{w}"] - 1.0
-    feats[f"volatility_{cfg.volatility_window}"] = rolling_volatility(close, cfg.volatility_window)
+    short_vol = rolling_volatility(close, cfg.volatility_window)
+    feats[f"volatility_{cfg.volatility_window}"] = short_vol
+    for w in cfg.long_volatility_windows:
+        feats[f"volatility_{w}"] = rolling_volatility(close, w)
+    longest = feats[f"volatility_{max(cfg.long_volatility_windows)}"]
+    feats[cfg.volatility_ratio_column] = short_vol / longest.replace(0.0, np.nan)
     short_ema, long_ema = ind[f"ema_{cfg.ema_cross_short}"], ind[f"ema_{cfg.ema_cross_long}"]
     feats["ema_bullish"] = (short_ema > long_ema).astype(float).where(long_ema.notna())
     feats["ema_diff_pct"] = (short_ema - long_ema) / close

@@ -32,6 +32,9 @@ stockml/
 ├── pyproject.toml              # deps, ruff, mypy, pytest config
 ├── .env.example                # DJANGO_SECRET_KEY, DJANGO_DEBUG, DATA_DIR, etc.
 ├── .claude/launch.json         # dev server for the preview pane (autoPort; honours $PORT)
+├── Dockerfile, .dockerignore  # image for Google Cloud Run (serves only; data baked in, no training)
+├── deploy/                     # start.sh (gunicorn entrypoint), gcp-setup.sh (one-time Cloud Run + keyless GitHub auth)
+├── .github/workflows/deploy.yml  # checks; on main + weekday nights: fetch, train, push image to GHCR, deploy to Cloud Run
 ├── legacy/
 │   └── machine_learning_project.py   # original notebook export (read-only reference)
 ├── src/stockml/                # framework-agnostic core library
@@ -165,12 +168,15 @@ After fetching new data, re-run `train_models` so models and backtests include t
   - Annotations on log axes use log10 coordinates (e.g. y=0 for a value of 1).
   - Long annotations stretch autorange; pin the axis range or keep labels short.
   - The chart container needs an explicit height (set in `dashboard.js` from `layout.height`), or autosized plots collapse to 0px.
+  - `autorangeoptions.minallowed/maxallowed` on date axes must be **epoch milliseconds**; date strings make plotly.js fall back to a 2000–2001 range.
+- **Phones (≤640px):** `phoneFigure()` in `dashboard.js` restyles figures client-side: title/subtitle move into HTML above the chart, the legend goes below the plot, the toolbar is hidden, heatmap cell text is dropped, and annotations named `EVENT_ANNOTATION` become numbers listed under the title. Keep chart code desktop-first; name any new event-style labels `EVENT_ANNOTATION`. Tables mark their phone columns with `data-key-cols` (1-based); the rest sit behind "Show all columns". Check new pages at 375px wide in both themes.
 
 ### Django rules
 - Views stay thin: validate input, call a function in `dashboard/services.py`, render. No pandas or sklearn code in views or templates.
 - Charts reach templates as JSON (`services.figure_json`, rendered via the `{% plotly_chart %}` tag) and render with Plotly.js; do not embed full HTML per figure.
 - Never download data or train models inside a request. Use the management commands (or a background worker if added later) and read cached results in views.
 - Cache expensive service calls with Django's cache framework, keyed by ticker + run id + config hash + price-file mtime. The cache is in-process (LocMem), so **restart the dev server after changing chart or service code**, or it keeps serving old figures.
+- File paths saved in the database are relative to `DATA_DIR` (`services.stored_path`/`data_path`), so data built in CI works inside the container.
 - Price data lives in Parquet files under `DATA_DIR` (index symbols keep their `^`, e.g. `^GSPC.parquet`); the database stores only metadata (tickers, training runs, metrics, model file paths).
 - Settings come from environment variables (`os.environ`, with a minimal `.env` reader). Relative paths in `DATA_DIR`/`DATABASE_PATH` resolve against the project root. No secrets in the repo. `DEBUG=False` must work (WhiteNoise serves static files).
 - Use class-based views where they reduce code; templates extend a single `base.html`.
