@@ -40,8 +40,8 @@ exclusive). The universe, start date, display names and units are all set in
 ### Dashboard pages
 
 Each chart has a one-line "how to read this" subtitle, and key charts carry a caption computed
-from the data (for example "0 of 17 features clear the noise band"). A header toggle switches
-between light and dark themes, remembers the choice, and otherwise follows the OS setting.
+from the data (for example "0 of 17 features clear the noise band"). Pages open in the light
+theme; a header toggle switches to dark and remembers the choice.
 
 1. **Overview**: candlesticks with 50/200-day trend lines and annotated market events (dot-com peak,
    Lehman, COVID, Fed hikes, ChatGPT launch), volume, drawdown from the all-time high, rolling volatility,

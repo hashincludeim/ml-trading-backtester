@@ -13,17 +13,19 @@ import plotly.io as pio
 
 from stockml.models.registry import MODEL_REGISTRY
 
-FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+# Matches the dashboard's UI face (dashboard.css), so chart text and page text are one family.
+FONT_FAMILY = "'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 
-SURFACE = "#fcfcfb"
-SURFACE_RAISED = "#ffffff"
-TEXT_PRIMARY = "#0b0b0b"
-TEXT_SECONDARY = "#52514e"
-TEXT_MUTED = "#8a8984"
-GRID = "#e6e5e0"
-AXIS_LINE = "#c9c8c2"
-CONTROL_BG = "#f0efec"
-CONTROL_ACTIVE = "#dcdad3"
+# Neutral chrome. SURFACE is also the page colour, so charts sit on the page without a box.
+SURFACE = "#ffffff"
+SURFACE_RAISED = "#fafafa"  # hover labels
+TEXT_PRIMARY = "#111113"
+TEXT_SECONDARY = "#4a4a50"
+TEXT_MUTED = "#6e6e76"  # 5:1 on SURFACE, so tick labels stay readable
+GRID = "#ebebee"
+AXIS_LINE = "#c4c4ca"
+CONTROL_BG = "#f3f3f4"
+CONTROL_ACTIVE = "#dcdce0"
 
 # Categorical slots, in validated order (identity only, never rank).
 CATEGORICAL: tuple[str, ...] = (
@@ -51,8 +53,8 @@ CATEGORICAL_DARK: tuple[str, ...] = (
 MODEL_COLORS: dict[str, str] = {
     name: CATEGORICAL[i % len(CATEGORICAL)] for i, name in enumerate(MODEL_REGISTRY)
 }
-BENCHMARK_COLOR = "#52514e"  # buy-and-hold / baselines: neutral ink, dashed
-BENCHMARK_FILL = "#c3c2b7"  # benchmark as a filled mark (bars)
+BENCHMARK_COLOR = TEXT_SECONDARY  # buy-and-hold / baselines: neutral ink, dashed
+BENCHMARK_FILL = "#c9c9ce"  # benchmark as a filled mark (bars)
 BENCHMARK_DASH = "dash"
 
 UP_COLOR = "#1baf7a"
@@ -66,7 +68,7 @@ BIG_MOVE_FILL = "rgba(235, 104, 52, 0.12)"
 QUIET_FILL = "rgba(42, 120, 214, 0.12)"
 PRICE_COLOR = "#2a78d6"
 BAND_FILL = "rgba(42, 120, 214, 0.08)"
-REFERENCE_LINE = "#8a8984"
+REFERENCE_LINE = TEXT_MUTED
 
 SEQUENTIAL_BLUE: list[tuple[float, str]] = [
     (0.0, "#f3f8fe"),
@@ -75,27 +77,30 @@ SEQUENTIAL_BLUE: list[tuple[float, str]] = [
     (0.75, "#256abf"),
     (1.0, "#0d366b"),
 ]
+DIVERGING_MIDPOINT = "#f0efec"  # neutral grey: "no change" reads as nothing
 DIVERGING_BLUE_RED: list[tuple[float, str]] = [
     (0.0, "#184f95"),
     (0.25, "#6da7ec"),
-    (0.5, "#f0efec"),
+    (0.5, DIVERGING_MIDPOINT),
     (0.75, "#ee8a86"),
     (1.0, "#a8262a"),
 ]
 
 # Light -> dark substitutions. Figures are built in light mode; the browser swaps every colour
-# found here when the dark theme is active, so both modes come from this one module.
+# found here when the dark theme is active, so both modes come from this one module. The dark
+# SURFACE must match the dark page colour in dashboard.css.
 DARK_COLOR_MAP: dict[str, str] = {
-    SURFACE: "#1a1a19",
-    SURFACE_RAISED: "#232321",
-    TEXT_PRIMARY: "#f5f5f2",
-    TEXT_SECONDARY: "#c3c2b7",
-    TEXT_MUTED: "#8f8e86",
-    GRID: "#2c2c29",
-    AXIS_LINE: "#45443f",
-    CONTROL_BG: "#383835",
-    CONTROL_ACTIVE: "#4a4944",
-    BENCHMARK_FILL: "#5a5954",
+    SURFACE: "#111113",
+    SURFACE_RAISED: "#1c1c1f",
+    TEXT_PRIMARY: "#f1f1ef",
+    TEXT_SECONDARY: "#b9b9be",
+    TEXT_MUTED: "#8b8b92",
+    GRID: "#222226",
+    AXIS_LINE: "#46464c",
+    CONTROL_BG: "#27272b",
+    CONTROL_ACTIVE: "#3a3a3f",
+    BENCHMARK_FILL: "#4d4d53",
+    DIVERGING_MIDPOINT: "#383835",
     UP_FILL: "rgba(25, 158, 112, 0.22)",
     DOWN_FILL: "rgba(230, 103, 103, 0.24)",
     BAND_FILL: "rgba(57, 135, 229, 0.16)",
@@ -152,14 +157,14 @@ def _build_template() -> go.layout.Template:
         "tickcolor": AXIS_LINE,
         "ticklen": 4,
         "automargin": True,
-        "title": {"font": {"size": 12, "color": TEXT_SECONDARY}, "standoff": 8},
-        "tickfont": {"size": 11, "color": TEXT_SECONDARY},
+        "title": {"font": {"size": 12, "color": TEXT_SECONDARY}, "standoff": 10},
+        "tickfont": {"size": 11, "color": TEXT_MUTED},
     }
     return go.layout.Template(
         layout={
             "font": {"family": FONT_FAMILY, "size": 12, "color": TEXT_PRIMARY},
             "title": {
-                "font": {"size": 16, "color": TEXT_PRIMARY, "weight": 600},
+                "font": {"size": 15, "color": TEXT_PRIMARY, "weight": 600},
                 "subtitle": {"font": {"size": 12, "color": TEXT_SECONDARY}},
                 "x": 0.0,
                 "xanchor": "left",
@@ -182,6 +187,11 @@ def _build_template() -> go.layout.Template:
                 "align": "left",
                 "font": {"family": FONT_FAMILY, "size": 12, "color": TEXT_PRIMARY},
             },
+            "modebar": {
+                "bgcolor": "rgba(0,0,0,0)",
+                "color": AXIS_LINE,
+                "activecolor": TEXT_PRIMARY,
+            },
             "legend": {
                 "orientation": "h",
                 "yanchor": "bottom",
@@ -192,7 +202,8 @@ def _build_template() -> go.layout.Template:
                 "bgcolor": "rgba(0,0,0,0)",
             },
             "xaxis": {**axis, "showgrid": False},
-            "yaxis": axis,
+            # Value axes lean on the hairline grid alone: no spine, no tick marks.
+            "yaxis": {**axis, "showline": False, "ticks": ""},
         }
     )
 

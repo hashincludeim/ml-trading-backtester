@@ -1,5 +1,5 @@
-<div class="tiles">
+<dl class="stats">
   {% for s in stats %}
-    <div class="tile"><div class="label">{{ s.label }}</div><div class="value {{ s.tone }}">{{ s.value }}</div></div>
+    <div class="stat"><dt>{{ s.label }}</dt><dd{% if s.tone %} class="{{ s.tone }}"{% endif %}>{{ s.value }}</dd></div>
   {% endfor %}
-</div>
+</dl>

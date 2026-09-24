@@ -2,14 +2,15 @@
  *
  * Figures arrive in the light palette. For dark mode every colour listed in the server's
  * DARK_COLOR_MAP (stockml.viz.theme) is swapped for its dark step, so both themes come from
- * one Python module and charts never need a second round trip.
+ * one Python module and charts never need a second round trip. Light is the default; dark
+ * applies only after the reader picks it with the header toggle.
  */
 (function () {
   "use strict";
 
   const STORAGE_KEY = "stockml-theme";
+  const FONT_WAIT_MS = 1500;
   const root = document.documentElement;
-  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
   // Matches the CSS phone breakpoint; below it charts get the compact layout from phoneFigure().
   const narrowQuery = window.matchMedia("(max-width: 640px)");
   const EVENT_ANNOTATION = "event";  // stockml.viz.charts.EVENT_ANNOTATION
@@ -17,15 +18,6 @@
   const DATA_KEYS = new Set(["x", "y", "z", "customdata", "text", "hovertext", "bdata"]);
   const charts = [];
   let darkMap = {};
-
-  function storedTheme() {
-    try {
-      const value = localStorage.getItem(STORAGE_KEY);
-      return value === "light" || value === "dark" ? value : null;
-    } catch (e) {
-      return null;
-    }
-  }
 
   function storeTheme(value) {
     try {
@@ -36,9 +28,19 @@
   }
 
   function currentTheme() {
-    const forced = root.dataset.theme;
-    if (forced === "light" || forced === "dark") return forced;
-    return darkQuery.matches ? "dark" : "light";
+    return root.dataset.theme === "dark" ? "dark" : "light";
+  }
+
+  /* Resolve once the page's text face has loaded (or after a short wait), so Plotly measures
+   * titles and legends with the real font instead of the fallback it would swap out later. */
+  function fontsReady() {
+    if (!document.fonts) return Promise.resolve();
+    const family = getComputedStyle(document.body).fontFamily;
+    const loads = ["400 12px ", "600 15px "].map(function (face) {
+      return document.fonts.load(face + family).catch(function () {});
+    });
+    const timeout = new Promise(function (resolve) { setTimeout(resolve, FONT_WAIT_MS); });
+    return Promise.race([Promise.all(loads), timeout]);
   }
 
   /* Deep-copy a figure fragment, swapping any colour string found in the map. */
@@ -227,9 +229,6 @@
       storeTheme(next);
       applyTheme();
     });
-    darkQuery.addEventListener("change", function () {
-      if (!storedTheme()) applyTheme();
-    });
   }
 
   function wireControls() {
@@ -278,7 +277,9 @@
     syncToggle();
     paintSwatches();
     if (!window.Plotly) return;
-    document.querySelectorAll(".chart[data-figure]").forEach(render);
+    fontsReady().then(function () {
+      document.querySelectorAll(".chart[data-figure]").forEach(render);
+    });
     // Rotating a phone or resizing a window across the breakpoint switches chart layouts.
     narrowQuery.addEventListener("change", function () { charts.forEach(draw); });
   });

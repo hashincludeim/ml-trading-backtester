@@ -189,7 +189,13 @@ After fetching new data, re-run `train_models` so models and backtests include t
 5. **Backtest**: equity curves vs buy-and-hold, risk table, cost sensitivity, risk vs return, drawdowns, rolling Sharpe, return histogram, monthly returns, transaction-cost slider.
 6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold, rebased prices, risk vs return per ticker, cross-ticker return correlation.
 
-A header toggle switches light/dark themes (stored in `localStorage`, otherwise following the OS).
+Light is the default theme (it does not follow the OS); a header toggle switches to dark and stores the choice in `localStorage`.
+
+### Visual design
+- Editorial research-note look: **Newsreader** (serif) for page titles, section heads and verdict headlines; **Instrument Sans** for everything else, including chart text (`FONT_FAMILY` in `theme.py`); JetBrains Mono for code only.
+- Chrome stays black, white and grey so the data carries the colour. No card boxes or shadows: figures sit on the page under a hairline, sections open with an ink rule, key figures form a ruled strip.
+- Each page's headline finding is a `.callout` with a label (e.g. "Verdict"), a serif `.callout-head` and a `.callout-body`. Captions under charts carry a small label: "Takeaway" (data-driven, via `_insight.html`), "How to read" or "Method".
+- The page colour equals `theme.SURFACE` in both themes (`--bg` in `dashboard.css` matches `DARK_COLOR_MAP[SURFACE]`), so charts blend into the page. Keep the two in sync.
 
 ## Testing
 - Every function in `src/stockml` gets unit tests with small synthetic DataFrames (no network in tests; mock yfinance).

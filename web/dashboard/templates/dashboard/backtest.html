@@ -20,8 +20,9 @@
 {% endblock %}
 {% block content %}
   <div class="callout{% if n_beat == 0 %} warn{% endif %}">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-    <p><strong>{{ n_beat }} of {{ n_models }}</strong> strategies beat buy &amp; hold on Sharpe ratio. With hindsight, the best on the test period is {{ best.label }} at <strong>{{ best.sharpe|num:2 }}</strong> against <strong>{{ benchmark.sharpe|num:2 }}</strong> for buy &amp; hold. Drag the cost slider to see how quickly turnover erodes any edge.</p>
+    <p class="callout-label">Verdict</p>
+    <p class="callout-head"><strong>{{ n_beat }} of {{ n_models }}</strong> strategies beat buy &amp; hold on Sharpe ratio</p>
+    <p class="callout-body">With hindsight, the best on the test period is {{ best.label }} at <strong>{{ best.sharpe|num:2 }}</strong> against <strong>{{ benchmark.sharpe|num:2 }}</strong> for buy &amp; hold. Drag the cost slider to see how quickly turnover erodes any edge.</p>
   </div>
 
   <section class="card">{% plotly_chart charts.equity "chart-equity" %}</section>

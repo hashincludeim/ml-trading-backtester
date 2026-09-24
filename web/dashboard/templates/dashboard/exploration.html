@@ -5,8 +5,9 @@
 {% block intro %}{{ n_rows|default:0 }} labelled trading days and {{ n_features }} engineered features. Each feature uses only information available at that day's close; the target is whether the <em>next</em> close is higher. This page asks, before any model is trained: is there any signal here at all?{% endblock %}
 {% block content %}
   <div class="callout">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-    <p><strong>{{ up_share|pct }}</strong> of days were followed by a rise, so the two classes are nearly balanced and a useless model scores about 50%. Statistics on this page use the full history, including the later test period. They describe the data and play no part in model selection.</p>
+    <p class="callout-label">Base rate</p>
+    <p class="callout-head"><strong>{{ up_share|pct }}</strong> of days were followed by a rise</p>
+    <p class="callout-body">The two classes are nearly balanced, so a useless model scores about 50%. Statistics on this page use the full history, including the later test period. They describe the data and play no part in model selection.</p>
   </div>
 
   <div class="section-head"><h2>Is tomorrow predictable?</h2><p>The core difficulty, in two charts</p></div>
@@ -18,7 +19,7 @@
   <div class="section-head"><h2>Feature signal</h2><p>Does each feature carry information about the next day?</p></div>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.feature_corr "chart-fcorr" %}{% include "dashboard/_insight.html" with text=insights.feature_corr %}</section>
-    <section class="card">{% plotly_chart charts.signal "chart-signal" %}<p class="insight">Pick a feature from the dropdown. A predictive feature would show a clear slope from Q1 to Q10; a flat line inside the error bars means no edge.</p></section>
+    <section class="card">{% plotly_chart charts.signal "chart-signal" %}<p class="insight"><span class="insight-label">How to read</span> Pick a feature from the dropdown. A predictive feature would show a clear slope from Q1 to Q10; a flat line inside the error bars means no edge.</p></section>
   </div>
   <div class="grid grid-2">
     <section class="card">{% plotly_chart charts.distribution "chart-dist" %}</section>
@@ -26,5 +27,5 @@
   </div>
 
   <div class="section-head"><h2>Redundancy</h2><p>Which features duplicate each other</p></div>
-  <section class="card">{% plotly_chart charts.correlation "chart-corr" %}<p class="insight">Tight blue blocks (the SMA and EMA ratios, for example) are near-duplicates. That's why linear models need regularisation, and why permutation importance can look small for each twin.</p></section>
+  <section class="card">{% plotly_chart charts.correlation "chart-corr" %}<p class="insight"><span class="insight-label">Takeaway</span> Tight blue blocks (the SMA and EMA ratios, for example) are near-duplicates. That's why linear models need regularisation, and why permutation importance can look small for each twin.</p></section>
 {% endblock %}

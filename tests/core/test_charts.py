@@ -11,13 +11,23 @@ from stockml.evaluation.metrics import RocCurve
 from stockml.features.pipeline import build_feature_frame, compute_indicators
 from stockml.viz import charts
 from stockml.viz.theme import (
+    AXIS_LINE,
+    BENCHMARK_FILL,
     BIG_MOVE_COLOR,
     CATEGORICAL,
     CATEGORICAL_DARK,
+    CONTROL_ACTIVE,
+    CONTROL_BG,
     DARK_COLOR_MAP,
+    DIVERGING_MIDPOINT,
     FONT_FAMILY,
+    GRID,
     MODEL_COLORS,
     SURFACE,
+    SURFACE_RAISED,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
 )
 from tests.conftest import make_prices
 
@@ -37,6 +47,27 @@ def test_dark_map_covers_palette_one_to_one() -> None:
     for light, dark in zip(CATEGORICAL, CATEGORICAL_DARK, strict=True):
         assert DARK_COLOR_MAP[light] == dark
     assert DARK_COLOR_MAP[SURFACE] != SURFACE
+
+
+def test_chrome_colours_are_distinct_and_all_have_dark_steps() -> None:
+    # The browser swaps colours by exact string, so two roles sharing a light hex would be
+    # forced onto one dark colour (e.g. hover labels vanishing into the chart surface).
+    chrome = [
+        SURFACE,
+        SURFACE_RAISED,
+        TEXT_PRIMARY,
+        TEXT_SECONDARY,
+        TEXT_MUTED,
+        GRID,
+        AXIS_LINE,
+        CONTROL_BG,
+        CONTROL_ACTIVE,
+        BENCHMARK_FILL,
+        DIVERGING_MIDPOINT,
+    ]
+    assert len({c.lower() for c in chrome}) == len(chrome)
+    for colour in chrome:
+        assert DARK_COLOR_MAP[colour] != colour
 
 
 def test_price_volume_chart_downsamples_with_overlays_and_events() -> None:

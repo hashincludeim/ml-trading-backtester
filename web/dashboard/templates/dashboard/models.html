@@ -21,8 +21,9 @@
 {% endblock %}
 {% block content %}
   <div class="callout{% if n_beat == 0 %} warn{% endif %}">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-    <p><strong>{{ n_beat }} of {{ n_models }}</strong> models beat the best naive guess, which is to always predict "{{ naive_direction }}" ({{ naive_accuracy|pct }} test accuracy).
+    <p class="callout-label">Verdict</p>
+    <p class="callout-head"><strong>{{ n_beat }} of {{ n_models }}</strong> models beat the best naive guess</p>
+    <p class="callout-body">That guess is to always predict "{{ naive_direction }}", which scores {{ naive_accuracy|pct }} test accuracy.
       {% if best_auc %}The best ROC AUC is {{ best_auc.roc_auc|num }} ({{ best_auc.label }}); 0.5 means no better than chance.{% endif %}
       {{ target_note }}</p>
   </div>
@@ -82,7 +83,7 @@
     {% if walk_forward %}
       {% plotly_chart walk_forward.chart "chart-walk-forward" %}
       {% include "dashboard/_insight.html" with text=walk_forward.insight %}
-      <p class="insight">The models above are fitted once on the training period. Walk-forward keeps the same tuned settings but refits every {{ walk_forward.retrain_every }} trading days ({{ walk_forward.n_refits }} times) on all earlier days, then predicts only the next block.{% if target == "direction" %} The backtest still uses the model trained once.{% endif %}</p>
+      <p class="insight"><span class="insight-label">Method</span> The models above are fitted once on the training period. Walk-forward keeps the same tuned settings but refits every {{ walk_forward.retrain_every }} trading days ({{ walk_forward.n_refits }} times) on all earlier days, then predicts only the next block.{% if target == "direction" %} The backtest still uses the model trained once.{% endif %}</p>
     {% else %}
       <p class="muted">This run was trained before walk-forward evaluation was added. Re-run <code>python web/manage.py train_models --ticker {{ run.ticker.symbol }} --target {{ target }}</code> to add it.</p>
     {% endif %}
@@ -95,6 +96,6 @@
   </div>
   <section class="card">
     {% plotly_chart charts.importance "chart-imp" %}
-    <p class="insight">Permutation importance is measured on the last validation fold of the training period, never on the test set. It's always reported for the original named features, even for PCA pipelines.</p>
+    <p class="insight"><span class="insight-label">Method</span> Permutation importance is measured on the last validation fold of the training period, never on the test set. It's always reported for the original named features, even for PCA pipelines.</p>
   </section>
 {% endblock %}
