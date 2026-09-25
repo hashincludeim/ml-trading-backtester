@@ -185,3 +185,29 @@ def test_volatility_runs_are_separate_from_direction_runs(data_dir: Path, db: No
     assert services.latest_run("TEST.L").pk == direction.pk
     assert services.latest_run("TEST.L", "volatility").pk == run.pk
     assert services.models_context("TEST.L", None)["heuristic"] is None
+
+
+def test_about_context_before_any_data(tmp_path: Path, db: None) -> None:
+    with override_settings(DATA_DIR=tmp_path):
+        ctx = services.about_context()
+    assert ctx["universe"] == []
+    assert ctx["results"] is None and ctx["split_chart"] is None
+    assert [s["label"] for s in ctx["stats"]] == ["Markets", "Features per day", "Models"]
+    assert len(ctx["models"]) == len(ExperimentConfig().model.models)
+
+
+def test_about_context_with_a_trained_ticker(data_dir: Path, db: None) -> None:
+    run = services.train_ticker("TEST.L", FAST)
+    ctx = services.about_context()
+    assert [u["symbol"] for u in ctx["universe"]] == ["TEST.L"]
+    assert ctx["n_bars"] == ctx["universe"][0]["n_rows"]
+    assert ctx["stats"][-1]["label"].startswith("Latest close")
+    results = ctx["results"]
+    assert results["n_pairs"] == 2 and results["n_tickers"] == 1
+    assert results["auc_min"] <= results["auc_max"]
+    assert results["test_start"] == run.test_start
+    split = json.loads(ctx["split_chart"])
+    stages = {y for trace in split["data"] for y in trace["y"]}
+    assert {"CV fold 1", "CV fold 3", "Final fit", "Walk-forward"} <= stages
+    tuned = {m["label"]: m["tuning"] for m in ctx["models"]}
+    assert tuned["Logistic Regression"].startswith("C from")

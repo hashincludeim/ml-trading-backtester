@@ -9,6 +9,7 @@ from stockml import analysis
 from stockml.config import TARGET_LABELS
 from stockml.evaluation.metrics import RocCurve
 from stockml.features.pipeline import build_feature_frame, compute_indicators
+from stockml.models.training import split_timeline
 from stockml.viz import charts
 from stockml.viz.theme import (
     AXIS_LINE,
@@ -294,3 +295,23 @@ def test_class_charts_use_target_wording_and_colours() -> None:
     assert sd.data[0].name.startswith("Actual: big move")
     assert sd.data[0].line.color == BIG_MOVE_COLOR
     assert sd.data[0].fillcolor in DARK_COLOR_MAP and sd.data[1].fillcolor in DARK_COLOR_MAP
+
+
+def test_split_timeline_chart_draws_dated_bars_by_role() -> None:
+    index = pd.bdate_range("2015-01-01", periods=300)
+    timeline = split_timeline(index, n_train=240, n_splits=3, retrain_every=20)
+    fig = charts.split_timeline_chart(timeline, "S&P 500")
+    _assert_themed(fig)
+    assert "S&P 500" in _title(fig)
+    assert [t.name for t in fig.data] == [label for label, _ in charts.SPLIT_ROLES.values()]
+    assert all(t.marker.color in DARK_COLOR_MAP for t in fig.data)
+    # Bars carry numeric lengths on dated bases, so the axis must be forced to dates.
+    assert fig.layout.xaxis.type == "date"
+    train, first = fig.data[0], timeline.iloc[0]
+    assert pd.Timestamp(train.base[0]) == first["start"] == index[0]
+    whole_days = (first["end"] - first["start"]).days + 1  # bars span whole days
+    assert train.x[0] == pytest.approx(whole_days * 86_400_000)
+    assert fig.layout.yaxis.categoryarray[0] == "CV fold 1"
+    assert fig.layout.yaxis.autorange == "reversed"  # first fold on top
+    assert len(fig.layout.shapes) == 1  # the test-start line
+    assert not fig.layout.annotations  # no "new text" placeholder from add_vline

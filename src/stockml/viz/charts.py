@@ -37,6 +37,9 @@ from stockml.viz.theme import (
     QUIET_FILL,
     REFERENCE_LINE,
     SEQUENTIAL_BLUE,
+    SPLIT_TEST,
+    SPLIT_TRAIN,
+    SPLIT_VALIDATION,
     SURFACE,
     TEXT_MUTED,
     TEXT_PRIMARY,
@@ -1154,6 +1157,77 @@ def roc_curves_chart(curves: Mapping[str, RocCurve]) -> go.Figure:
         subtitle="Curves hugging the dashed diagonal are no better than guessing.",
     )
     return fig
+
+
+SPLIT_ROLES: dict[str, tuple[str, str]] = {
+    "train": ("Training rows", SPLIT_TRAIN),
+    "validation": ("Validation (CV score)", SPLIT_VALIDATION),
+    "test": ("Test period (unseen)", SPLIT_TEST),
+}
+
+
+def split_timeline_chart(timeline: pd.DataFrame, name: str) -> go.Figure:
+    """Train/test split, CV folds and walk-forward blocks as bars on one date axis.
+
+    Args:
+        timeline: Output of :func:`stockml.models.training.split_timeline`.
+        name: Display name of the ticker, for the title.
+    """
+    stages = list(dict.fromkeys(timeline["stage"]))
+    fig = go.Figure()
+    for role, (label, color) in SPLIT_ROLES.items():
+        part = timeline[timeline["role"] == role]
+        if part.empty:
+            continue
+        start = pd.to_datetime(part["start"])
+        # Bars span whole days, so a one-day block is still visible.
+        end = pd.to_datetime(part["end"]) + pd.Timedelta(days=1)
+        fig.add_trace(
+            go.Bar(
+                y=part["stage"],
+                base=start,
+                x=(end - start).dt.total_seconds() * 1000,  # date-axis bar lengths are in ms
+                orientation="h",
+                name=label,
+                marker={"color": color, "line": {"width": 1, "color": SURFACE}},
+                customdata=np.column_stack(
+                    [
+                        start.dt.strftime("%d %b %Y"),
+                        pd.to_datetime(part["end"]).dt.strftime("%d %b %Y"),
+                        part["n_rows"].map("{:,}".format),
+                    ]
+                ),
+                hovertemplate="%{y}: %{customdata[0]} to %{customdata[1]}, "
+                "%{customdata[2]} trading days"
+                f"<extra>{label}</extra>",
+            )
+        )
+    test = timeline[timeline["role"] == "test"]
+    if not test.empty:
+        fig.add_vline(
+            x=_epoch_ms(pd.Timestamp(test["start"].min())),
+            line={"dash": "dot", "width": 1, "color": REFERENCE_LINE},
+        )
+    fig.update_layout(barmode="overlay", bargap=0.38, hovermode="closest")
+    # Bar lengths are numbers, so plotly.js would infer a linear axis; the bases are dates.
+    fig.update_xaxes(type="date", showspikes=False, showgrid=True)
+    fig.update_yaxes(
+        categoryorder="array",
+        categoryarray=stages,
+        autorange="reversed",  # first CV fold at the top
+        showgrid=False,
+        showspikes=False,
+    )
+    date_axes(fig)
+    return apply_theme(
+        fig,
+        f"How the {name} history is split",
+        "Trading date",
+        None,
+        height=150 + 44 * len(stages),
+        subtitle="Every score comes from days after the ones the model learned from. "
+        "The test period is used once, at the end.",
+    )
 
 
 WALK_FORWARD_LABEL = "Walk-forward"

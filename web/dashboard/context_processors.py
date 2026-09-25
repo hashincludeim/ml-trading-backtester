@@ -14,7 +14,13 @@ NAV = [
     ("multi", "dashboard:multi_ticker", "Multi-ticker"),
 ]
 THEME_MAP = {light.lower(): dark for light, dark in DARK_COLOR_MAP.items()}
+SOURCE_URL = "https://github.com/hashincludeim/ml-trading-backtester"
 
 
 def dashboard(request: HttpRequest) -> dict[str, object]:
-    return {"nav_items": NAV, "plotlyjs_version": get_plotlyjs_version(), "theme_map": THEME_MAP}
+    return {
+        "nav_items": NAV,
+        "plotlyjs_version": get_plotlyjs_version(),
+        "theme_map": THEME_MAP,
+        "source_url": SOURCE_URL,
+    }

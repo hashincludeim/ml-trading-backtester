@@ -1,0 +1,233 @@
+{% extends "dashboard/base.html" %}
+{% load static dashboard_tags %}
+{% block title %}About{% endblock %}
+{% block heading %}How StockML works{% endblock %}
+{% block intro %}StockML asks one question of {% if universe %}{{ n_bars|floatformat:"0g" }} daily prices from {{ universe|length }} markets{% else %}decades of daily prices{% endif %}: <em>will tomorrow's close be higher than today's?</em> It trains {{ models|length }} machine-learning models to answer, trades on their answers in a backtest, and shows every step as an interactive chart. This page explains what it does, how, and what you can do here.{% endblock %}
+{% block content %}
+  <figure class="video-figure">
+    <video class="video" controls playsinline preload="metadata" poster="{% static 'dashboard/video/stockml-explainer-poster.jpg' %}" aria-describedby="video-caption">
+      <source src="{% static 'dashboard/video/stockml-explainer.mp4' %}" type="video/mp4">
+      <a href="{% static 'dashboard/video/stockml-explainer.mp4' %}">Download the tour video (MP4)</a>
+    </video>
+    <figcaption id="video-caption" class="insight"><span class="insight-label">Watch</span> A one-minute tour: the data, the features, the models, the backtest and the six pages. It has no sound; the on-screen captions tell the story, and the <a href="#transcript">transcript</a> is below. <a href="{% static 'dashboard/video/stockml-explainer.mp4' %}" download>Download the MP4</a>.</figcaption>
+  </figure>
+
+  {% include "dashboard/_tiles.html" %}
+
+  {% if results %}
+  <div class="callout">
+    <p class="callout-label">Verdict so far</p>
+    <p class="callout-head">Tomorrow's direction is <strong>close to a coin flip</strong>, and every page says so</p>
+    <p class="callout-body">Across {{ results.n_pairs }} model and ticker pairs, test ROC AUC runs from <strong>{{ results.auc_min|num:2 }}</strong> to <strong>{{ results.auc_max|num:2 }}</strong>, where 0.50 is chance. The model each ticker would pick by cross-validation beats the naive baseline on {{ results.n_beat_naive }} of {{ results.n_tickers }} tickers. The value here is a sound method and clear charts, not a money machine.</p>
+  </div>
+  {% endif %}
+
+  <div class="section-head"><h2>What it does</h2><p>Three jobs, in order, for every market in the dashboard</p></div>
+  <ol class="jobs">
+    <li>
+      <p class="step-num">01</p>
+      <h3>Predict</h3>
+      <p>Each trading day becomes a row of {{ features.feature_columns|length }} numbers describing recent price action, trend, momentum, volatility and volume. {{ models|length }} classifiers learn from past rows to answer <em>{{ targets.0.question|lower }}</em> A second target asks: <em>{{ targets.1.question|lower }}</em></p>
+    </li>
+    <li>
+      <p class="step-num">02</p>
+      <h3>Backtest</h3>
+      <p>A simple strategy follows each model: long when it predicts a rise, short (or in cash) when it predicts a fall, paying {{ backtest_config.cost_bps|floatformat }} basis points every time the position changes. Its returns, risk and drawdowns are set against simply buying and holding.</p>
+    </li>
+    <li>
+      <p class="step-num">03</p>
+      <h3>Explain</h3>
+      <p>Every stage is an interactive chart with a one-line "how to read" and a caption computed from the data that states the takeaway, including when a model fails. Nothing is cherry-picked: models are compared with naive baselines on days they never saw.</p>
+    </li>
+  </ol>
+
+  <div class="section-head"><h2>How it works</h2><p>From raw prices to a verdict in six steps. Each step is a small, tested function in the core library.</p></div>
+  <ol class="pipeline">
+    <li>
+      <div class="pipeline-head"><p class="step-num">01</p><h3>Collect</h3></div>
+      <div class="pipeline-body">
+        <p>Daily open, high, low, close and volume come from Yahoo Finance for {% for u in universe %}{{ u.name }}{% if not forloop.last %}{% if forloop.revcounter == 2 %} and {% else %}, {% endif %}{% endif %}{% empty %}each configured ticker{% endfor %}, adjusted for splits and dividends, from {{ data_config.start|slice:":4" }} (or the company's listing date) to the latest close. Prices are cached as Parquet files, so pages never wait on a download.</p>
+        <p class="where"><code>stockml/data/loader.py</code></p>
+      </div>
+    </li>
+    <li>
+      <div class="pipeline-head"><p class="step-num">02</p><h3>Clean</h3></div>
+      <div class="pipeline-body">
+        <p>Prices are validated, and bad ticks are repaired. A daily move is flagged only if it is more than {{ data_config.outlier_zscore_threshold|floatformat }} times the volatility of the previous {{ data_config.outlier_zscore_window }} days <em>and</em> reverses the next day, the signature of a data error. Genuine crashes such as 2008 and March 2020 are kept.</p>
+        <p class="where"><code>stockml/data/cleaning.py</code></p>
+      </div>
+    </li>
+    <li>
+      <div class="pipeline-head"><p class="step-num">03</p><h3>Engineer features</h3></div>
+      <div class="pipeline-body">
+        <p>{{ features.feature_columns|length }} features per day, all expressed as ratios or percentages so they compare across decades and across stocks:</p>
+        <ul class="feature-list">
+          <li><strong>Price action</strong> the day's high–low range, open-to-close change and one-day return</li>
+          <li><strong>Trend</strong> the close against its {{ features.sma_windows|join:", " }}-day simple and {{ features.ema_windows|join:", " }}-day exponential moving averages, and whether the {{ features.ema_cross_short }}-day EMA sits above the {{ features.ema_cross_long }}-day one</li>
+          <li><strong>Momentum</strong> {{ features.rsi_window }}-day RSI and MACD ({{ features.macd_fast }}, {{ features.macd_slow }}, {{ features.macd_signal }}) with its histogram</li>
+          <li><strong>Volatility</strong> realised volatility over {{ features.volatility_window }}, {{ features.long_volatility_windows|join:" and " }} days, their ratio, and the close's position within {{ features.bollinger_window }}-day Bollinger Bands</li>
+          <li><strong>Volume</strong> the day's volume against its {{ features.volume_window }}-day average</li>
+        </ul>
+        <p>The label for day <em>t</em> is 1 if the close on day <em>t</em>+1 is higher. Features for day <em>t</em> use only data up to that day's close, and tests prove it: they change future prices and check that no earlier feature moves.</p>
+        <p class="where"><code>stockml/features/</code></p>
+      </div>
+    </li>
+    <li>
+      <div class="pipeline-head"><p class="step-num">04</p><h3>Train</h3></div>
+      <div class="pipeline-body">
+        <p>History is split in time, never shuffled: the first {{ train_share|pct:0 }} of days train the models and the last {{ model_config.test_size|pct:0 }} are held back as the test period. Each model is one scikit-learn pipeline (scaling, optional PCA, then the classifier), so preprocessing is fitted on training folds only. Settings are tuned with {{ model_config.cv_splits }}-fold expanding-window cross-validation inside the training period.</p>
+        <ul class="model-list">
+          {% for m in models %}
+            <li><span class="swatch" data-swatch="{{ m.color }}" style="background: {{ m.color }}"></span>{{ m.label }}{% if m.tuning or m.pca %} <span class="muted">{% if m.pca %}PCA to {{ m.pca }} components{% if m.tuning %}; {% endif %}{% endif %}{% if m.tuning %}tunes {{ m.tuning }}{% endif %}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <p class="where"><code>stockml/models/</code></p>
+      </div>
+    </li>
+    <li>
+      <div class="pipeline-head"><p class="step-num">05</p><h3>Evaluate</h3></div>
+      <div class="pipeline-body">
+        <p>The same fitted pipeline is scored on the test period with accuracy, precision, recall, F1 and ROC AUC, next to a naive baseline that always predicts the more common direction. ROC AUC gets a 95% confidence interval, and a walk-forward check refits every model each {{ model_config.retrain_every }} trading days to see whether fresher data helps. Feature importance is measured on the last training fold, never on the test set.</p>
+        <p class="where"><code>stockml/evaluation/metrics.py</code>, <code>stockml/models/walk_forward.py</code></p>
+      </div>
+    </li>
+    <li>
+      <div class="pipeline-head"><p class="step-num">06</p><h3>Backtest</h3></div>
+      <div class="pipeline-body">
+        <p>The prediction made at day <em>t</em>'s close sets the position that earns the log return from <em>t</em> to <em>t</em>+1. Costs are charged on every position change, including the first entry. Sharpe and Sortino are annualised over {{ backtest_config.periods_per_year }} trading days, max drawdown is measured on the equity curve, and Calmar is annual return divided by max drawdown. A cost sweep from {{ analysis_config.cost_grid_bps|first|floatformat }} to {{ analysis_config.cost_grid_bps|last|floatformat }} bp shows how fast turnover eats an edge.</p>
+        <p class="where"><code>stockml/evaluation/backtest.py</code></p>
+      </div>
+    </li>
+  </ol>
+
+  {% if split_chart %}
+  <section class="card">
+    {% plotly_chart split_chart "chart-split" %}
+    <p class="insight"><span class="insight-label">How to read</span> Grey bars are the days a model learns from; blue bars are the cross-validation folds that score it while settings are chosen; orange is the test period{% if results %} ({{ results.test_start|date:"M Y" }} to {{ results.test_end|date:"M Y" }}){% endif %}, touched once at the end. The walk-forward row refits at the start of each orange block using every earlier day.</p>
+  </section>
+  {% endif %}
+
+  <div class="section-head"><h2>Ground rules</h2><p>What keeps the results honest. Each rule is enforced in code and covered by tests.</p></div>
+  <ul class="rules">
+    <li><h3>No look-ahead</h3><p>A feature on day <em>t</em> sees nothing after day <em>t</em>'s close, and the final day, whose outcome is unknown, is dropped.</p></li>
+    <li><h3>Time only moves forward</h3><p>Chronological train/test splits and expanding-window cross-validation. Shuffled k-fold, which would train on the future, is never used.</p></li>
+    <li><h3>Preprocessing inside the pipeline</h3><p>Scalers and PCA are fitted on each training fold, never on the full history, so no test-period statistics leak in.</p></li>
+    <li><h3>One model, everywhere</h3><p>The pipeline that is tuned is the one that is scored, backtested and plotted. No refitting a friendlier variant for the report.</p></li>
+    <li><h3>Choose by the past only</h3><p>When one model is picked per ticker, the choice uses training-period cross-validation, so its test result stays out-of-sample.</p></li>
+    <li><h3>Always show the baseline</h3><p>Every model sits next to the naive guess and buy &amp; hold, and the page says so when it loses.</p></li>
+  </ul>
+
+  <div class="section-head"><h2>What you can do</h2><p>Six pages, each answering one question. Pick a ticker on any page and it follows you to the next.</p></div>
+  <ol class="guide">
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:overview' %}">Overview</a></h3><p>How has this market behaved?</p></div>
+      <div class="guide-body">
+        <p>Candlesticks with {{ analysis_config.trend_sma_windows|join:"- and " }}-day moving averages and market events marked{% if analysis_config.events %} ({{ analysis_config.events.0.1 }} to {{ analysis_config.events|last|last }}){% endif %}, volume, the fall from each all-time high, rolling volatility, returns by calendar year, and a year × month heatmap.</p>
+        <p class="try"><span>Try</span> Set a start and end date to zoom the whole page into one episode, such as 2008 or 2020.</p>
+      </div>
+    </li>
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:indicators' %}">Indicators</a></h3><p>Do classic trading signals work?</p></div>
+      <div class="guide-body">
+        <p>Moving averages, Bollinger Bands, RSI with overbought and oversold zones, and MACD, with {{ features.ema_cross_short }}/{{ features.ema_cross_long }}-day EMA crossovers marked. Below, the share of up days after each signal, with 95% intervals.</p>
+        <p class="try"><span>Try</span> Toggle overlays with the buttons above the chart, then check whether any signal clears the dashed average.</p>
+      </div>
+    </li>
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:exploration' %}">Exploration</a></h3><p>Is there any signal before a model is trained?</p></div>
+      <div class="guide-body">
+        <p>Return autocorrelation, fat tails against a normal curve, each feature's correlation with the next day's return against a noise band, next-day up-rate by feature decile, distributions by outcome, class balance and feature redundancy.</p>
+        <p class="try"><span>Try</span> Use the dropdown on the decile chart. A useful feature slopes clearly from the lowest to the highest decile.</p>
+      </div>
+    </li>
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:models' %}">Models</a></h3><p>Can a model beat a coin flip?</p></div>
+      <div class="guide-body">
+        <p>A comparison table against the naive baseline, cross-validation scores and their fold-by-fold stability, ROC curves, rolling test accuracy, walk-forward results with confidence intervals, and for one chosen model its score separation, confusion matrix and feature importance.</p>
+        <p class="try"><span>Try</span> Switch "Predict" between direction and volatility, or click a model's name for its detail charts.</p>
+      </div>
+    </li>
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:backtest' %}">Backtest</a></h3><p>Would trading on the predictions have paid?</p></div>
+      <div class="guide-body">
+        <p>Equity curves against buy &amp; hold, a risk table (return, volatility, Sharpe, Sortino, drawdown, Calmar, hit rate, trades and costs), cost sensitivity, risk against return, drawdowns, rolling Sharpe, the daily-return histogram and monthly returns.</p>
+        <p class="try"><span>Try</span> Drag the cost slider from {{ analysis_config.cost_grid_bps|first|floatformat }} to {{ analysis_config.cost_grid_bps|last|floatformat }} bp, or switch to long/flat to sit in cash on predicted down days.</p>
+      </div>
+    </li>
+    <li>
+      <div class="guide-head"><h3><a href="{% url 'dashboard:multi_ticker' %}">Multi-ticker</a></h3><p>Does anything work consistently?</p></div>
+      <div class="guide-body">
+        <p>A ticker × model heatmap, each ticker's cross-validation pick against buy &amp; hold, rebased prices, risk against return for each stock, and how closely the markets move together.</p>
+        <p class="try"><span>Try</span> Switch the heatmap between accuracy, ROC AUC and Sharpe ratio.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="section-head section-head-minor"><h2>Working with the charts</h2><p>Every chart is live, not a picture</p></div>
+  <ul class="tips">
+    <li><strong>Hover or tap</strong> for exact values. Time-series charts show every series for that day together.</li>
+    <li><strong>Drag to zoom</strong> into a stretch of time; double-click to reset. Range buttons jump to the last 6 months, 1 or 5 years.</li>
+    <li><strong>Click a legend entry</strong> to hide or show that series; double-click to show it alone.</li>
+    <li><strong>Save a chart</strong> as a PNG from the camera icon in the toolbar that appears on hover.</li>
+    <li><strong>Switch theme</strong> with the moon and sun button at the top right. Your choice is remembered.</li>
+    <li><strong>Share a view.</strong> Settings live in the address bar, so a link such as <a href="{% url 'dashboard:backtest' %}?cost_bps=20&amp;mode=long_flat"><code>/backtest/?cost_bps=20&amp;mode=long_flat</code></a> reopens exactly that page.</li>
+    <li><strong>On a phone</strong>, chart titles sit above each plot, legends move below it, and wide tables show key columns first, with the rest a tap away.</li>
+  </ul>
+
+  {% if universe %}
+  <div class="section-head"><h2>The data</h2><p>What is in the dashboard right now</p></div>
+  <section class="card">
+    <div class="table-wrap" data-key-cols="1,5,6">
+      <table>
+        <thead><tr><th>Market</th><th>Symbol</th><th>Quoted in</th><th>From</th><th>To</th><th>Daily bars</th></tr></thead>
+        <tbody>
+          {% for u in universe %}
+            <tr>
+              <td><a href="{% url 'dashboard:overview' %}?ticker={{ u.symbol|urlencode }}">{{ u.name }}</a></td>
+              <td>{{ u.symbol }}</td>
+              <td>{% if u.unit == "points" %}index points{% else %}{{ u.unit }}{% endif %}</td>
+              <td>{{ u.first|date:"j M Y" }}</td>
+              <td>{{ u.last|date:"j M Y" }}</td>
+              <td>{{ u.n_rows|floatformat:"0g" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="insight"><span class="insight-label">Method</span> Stock prices are in US dollars and the S&amp;P 500 in index points, all adjusted for splits and dividends. The first labelled day comes after the longest feature window has filled, and the last day is dropped because its outcome is not yet known.</p>
+  </section>
+  {% endif %}
+
+  <div class="section-head"><h2>Under the hood</h2><p>How the site is built and kept current</p></div>
+  <div class="grid grid-2 prose-grid">
+    <section class="card">
+      <h2>Two layers</h2>
+      <p>All data, feature, model, backtest and chart code lives in a plain Python library with no web framework in it, so the same functions run in a notebook, a test or this site. Django is a thin layer on top: each page validates its settings, calls one service function and renders. Charts reach your browser as Plotly JSON and are cached per ticker and training run.</p>
+    </section>
+    <section class="card">
+      <h2>Refreshed every weeknight</h2>
+      <p>Nothing heavy runs while you browse. Each weekday at 22:30 UTC, after the US close, GitHub Actions runs the test suite, downloads the latest prices, retrains every model, builds the results into a container image and deploys it to Google Cloud Run. If a step fails, the site keeps the previous day's data.{% if results %} Latest training run: {{ results.trained_at|date:"j M Y, H:i T" }}.{% endif %}</p>
+    </section>
+    <section class="card">
+      <h2>Tested and typed</h2>
+      <p>Unit tests run on synthetic prices with no network access. They include no-leakage tests, backtests checked against hand-computed returns, and regression tests for chart rendering quirks. The library is type-checked with mypy in strict mode and linted with ruff.</p>
+    </section>
+    <section class="card">
+      <h2>Built with</h2>
+      <p>Python, pandas, NumPy, scikit-learn, statsmodels, Plotly, Django, WhiteNoise, yfinance and Parquet. The code is open: <a href="{{ source_url }}">read it on GitHub</a>.</p>
+    </section>
+  </div>
+
+  <div class="section-head"><h2>Limits</h2><p>Read the results with these in mind</p></div>
+  <ul class="rules rules-2">
+    <li><h3>Not investment advice</h3><p>This is an educational project about method and communication. Nothing here recommends buying or selling anything.</p></li>
+    <li><h3>Hindsight in the universe</h3><p>These are today's giants, chosen today. Holding them since 2000 looks good partly because we already know they survived and grew, which flatters buy &amp; hold.</p></li>
+    <li><h3>Simple trading costs</h3><p>A flat charge per position change stands in for spreads and commissions. There is no slippage, market impact, borrowing fee for shorts, or tax.</p></li>
+    <li><h3>Trading at the close</h3><p>A prediction made from a day's close is assumed to trade at that same close. In practice you would trade just before it or at the next open.</p></li>
+  </ul>
+
+  <details class="transcript" id="transcript">
+    <summary>Video transcript</summary>
+    {% include "dashboard/_video_transcript.html" %}
+  </details>
+{% endblock %}

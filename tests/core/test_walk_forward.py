@@ -5,7 +5,7 @@ import pytest
 
 from stockml.features.pipeline import build_feature_frame
 from stockml.models.registry import build_pipeline
-from stockml.models.walk_forward import walk_forward_predict
+from stockml.models.walk_forward import block_starts, walk_forward_predict
 from tests.conftest import make_prices
 
 
@@ -67,3 +67,11 @@ def test_rejects_bad_arguments(xy: tuple[pd.DataFrame, pd.Series]) -> None:
         walk_forward_predict(pipe, X, y, 100, 0)
     with pytest.raises(ValueError, match="index"):
         walk_forward_predict(pipe, X, y.iloc[1:], 100, 10)
+
+
+def test_block_starts_match_the_refits(xy: tuple[pd.DataFrame, pd.Series]) -> None:
+    X, y = xy
+    wf = walk_forward_predict(build_pipeline("logistic_regression"), X, y, 250, 40)
+    starts = block_starts(len(X), 250, 40)
+    assert list(starts)[:2] == [250, 290]
+    assert list(wf.refit_dates) == [X.index[i] for i in starts]

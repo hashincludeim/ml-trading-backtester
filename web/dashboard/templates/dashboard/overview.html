@@ -3,6 +3,9 @@
 {% block title %}Overview{% endblock %}
 {% block heading %}{% firstof ticker_name form.ticker.value %} overview{% endblock %}
 {% block intro %}Adjusted daily prices{% if range %} from {{ range.0|date:"j M Y" }} to {{ range.1|date:"j M Y" }}{% endif %}: the price path, how deep and long the losses ran, when the stock made or lost money, and how turbulent it was.{% endblock %}
+{% block after_intro %}
+  <p class="tour-link"><a href="{% url 'dashboard:about' %}"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9"/><path d="M8.25 6.5v7l5.5-3.5z"/></svg><span>How does this work? Watch the <span class="nowrap">one-minute tour</span></span></a></p>
+{% endblock %}
 {% block content %}
   {% include "dashboard/_tiles.html" %}
   <section class="card">{% plotly_chart charts.price "chart-price" %}</section>

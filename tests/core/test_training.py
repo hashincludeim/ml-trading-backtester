@@ -11,7 +11,10 @@ from stockml.features.pipeline import build_feature_frame
 from stockml.models.persistence import load_model, save_model
 from stockml.models.registry import build_pipeline
 from stockml.models.training import (
+    FINAL_FIT_STAGE,
+    WALK_FORWARD_STAGE,
     chronological_split,
+    split_timeline,
     time_series_cv,
     train_model,
     validation_importance,
@@ -69,3 +72,31 @@ def test_persistence_roundtrip(tmp_path: Path, xy: tuple[pd.DataFrame, pd.Series
     loaded = load_model(path)
     assert isinstance(loaded, Pipeline)
     assert (loaded.predict(X) == fitted.predict(X)).all()
+
+
+def test_split_timeline_mirrors_split_folds_and_walk_forward() -> None:
+    index = pd.bdate_range("2020-01-01", periods=100)
+    timeline = split_timeline(index, n_train=80, n_splits=4, retrain_every=8)
+    folds = timeline[timeline["stage"].str.startswith("CV fold")]
+    assert list(dict.fromkeys(folds["stage"])) == [f"CV fold {i}" for i in range(1, 5)]
+    for _, fold in folds.groupby("stage"):
+        train, val = fold.iloc[0], fold.iloc[1]
+        assert (train["role"], val["role"]) == ("train", "validation")
+        assert train["start"] == index[0]  # expanding window
+        assert index.get_loc(val["start"]) == index.get_loc(train["end"]) + 1
+        assert val["end"] < index[80]  # CV never touches the test period
+    final = timeline[timeline["stage"] == FINAL_FIT_STAGE].set_index("role")
+    assert final.loc["train", "end"] == index[79]
+    assert final.loc["test", "start"] == index[80]
+    assert final.loc["test", "end"] == index[-1]
+    assert final["n_rows"].sum() == len(index)
+    blocks = timeline[(timeline["stage"] == WALK_FORWARD_STAGE) & (timeline["role"] == "test")]
+    assert list(blocks["start"]) == list(index[80::8])
+    assert blocks["n_rows"].tolist() == [8, 8, 4]  # the last block is cut at the final day
+
+
+def test_split_timeline_without_walk_forward_and_bad_sizes() -> None:
+    index = pd.bdate_range("2020-01-01", periods=50)
+    assert WALK_FORWARD_STAGE not in set(split_timeline(index, 40, 3)["stage"])
+    with pytest.raises(ValueError):
+        split_timeline(index, n_train=50, n_splits=3)
