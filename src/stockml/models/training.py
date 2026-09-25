@@ -14,10 +14,13 @@ from sklearn.pipeline import Pipeline
 
 from stockml.config import ModelConfig
 from stockml.models.registry import build_pipeline, get_spec
+from stockml.models.walk_forward import block_starts
 
 logger = logging.getLogger(__name__)
 
 CV_SCORING: tuple[str, ...] = ("accuracy", "roc_auc", "f1")
+FINAL_FIT_STAGE = "Final fit"
+WALK_FORWARD_STAGE = "Walk-forward"
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,56 @@ def chronological_split(X: pd.DataFrame, y: pd.Series, test_size: float) -> Spli
     if n_train < 1 or n_test < 1:
         raise ValueError("Not enough rows for a train/test split")
     return Split(X.iloc[:n_train], X.iloc[n_train:], y.iloc[:n_train], y.iloc[n_train:])
+
+
+def split_timeline(
+    index: pd.DatetimeIndex, n_train: int, n_splits: int, retrain_every: int | None = None
+) -> pd.DataFrame:
+    """Every period that tuning, cross-validation, testing and walk-forward use, as date ranges.
+
+    Mirrors :func:`chronological_split`, the ``TimeSeriesSplit`` folds of
+    :func:`time_series_cv` and :func:`train_model`, and the walk-forward refit blocks, so the
+    whole evaluation scheme can be drawn on one timeline.
+
+    Args:
+        index: Dates of the labelled rows (training period, then test period), chronological.
+        n_train: Rows in the training period; the remaining rows are the test period.
+        n_splits: ``TimeSeriesSplit`` folds within the training period.
+        retrain_every: Walk-forward refit interval in rows; ``None`` leaves that stage out.
+
+    Returns:
+        One row per contiguous block with columns ``stage`` (``"CV fold 1"`` ...,
+        ``"Final fit"``, ``"Walk-forward"``), ``role`` (``"train"``, ``"validation"`` or
+        ``"test"``), ``start`` and ``end`` (inclusive dates) and ``n_rows``.
+
+    Raises:
+        ValueError: If ``n_train`` leaves no training or no test rows.
+    """
+    if not 0 < n_train < len(index):
+        raise ValueError("n_train must leave at least one training and one test row")
+
+    def block(stage: str, role: str, first: int, last: int) -> dict[str, object]:
+        return {
+            "stage": stage,
+            "role": role,
+            "start": index[first],
+            "end": index[last],
+            "n_rows": last - first + 1,
+        }
+
+    rows = []
+    folds = TimeSeriesSplit(n_splits=n_splits).split(np.zeros((n_train, 1)))
+    for i, (fit, val) in enumerate(folds, start=1):
+        rows.append(block(f"CV fold {i}", "train", fit[0], fit[-1]))
+        rows.append(block(f"CV fold {i}", "validation", val[0], val[-1]))
+    rows.append(block(FINAL_FIT_STAGE, "train", 0, n_train - 1))
+    rows.append(block(FINAL_FIT_STAGE, "test", n_train, len(index) - 1))
+    if retrain_every is not None:
+        rows.append(block(WALK_FORWARD_STAGE, "train", 0, n_train - 1))
+        for start in block_starts(len(index), n_train, retrain_every):
+            end = min(start + retrain_every, len(index)) - 1
+            rows.append(block(WALK_FORWARD_STAGE, "test", start, end))
+    return pd.DataFrame(rows, columns=["stage", "role", "start", "end", "n_rows"])
 
 
 def time_series_cv(

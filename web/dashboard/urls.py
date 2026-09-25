@@ -11,4 +11,5 @@ urlpatterns = [
     path("models/", views.ModelsView.as_view(), name="models"),
     path("backtest/", views.BacktestView.as_view(), name="backtest"),
     path("multi-ticker/", views.MultiTickerView.as_view(), name="multi_ticker"),
+    path("about/", views.AboutView.as_view(), name="about"),
 ]

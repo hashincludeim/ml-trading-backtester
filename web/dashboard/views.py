@@ -117,3 +117,14 @@ class MultiTickerView(TemplateView):
         except services.NoDataError as exc:
             context["error"] = str(exc)
         return context
+
+
+class AboutView(TemplateView):
+    """What the site does, how it works, and how to use each page (with the explainer video)."""
+
+    template_name = "dashboard/about.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context.update(page="about", **services.about_context())
+        return context

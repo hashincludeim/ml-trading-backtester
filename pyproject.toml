@@ -34,6 +34,10 @@ dev = [
     "django-stubs>=5.0",
     "ipykernel",
 ]
+# Renders the explainer video (video/make_video.py): Playwright drives the installed Chrome to
+# capture frames, and imageio-ffmpeg bundles an ffmpeg binary to encode them. Not needed to run
+# the app.
+video = ["playwright>=1.45", "imageio-ffmpeg>=0.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

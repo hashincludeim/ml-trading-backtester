@@ -29,6 +29,7 @@ from django.db import transaction
 from dashboard.models import ModelResult, Ticker, TrainingRun
 from stockml import analysis
 from stockml.config import (
+    TARGET_LABELS,
     AnalysisConfig,
     BacktestConfig,
     DataConfig,
@@ -63,6 +64,7 @@ from stockml.features.pipeline import build_feature_frame, compute_indicators
 from stockml.features.technical import log_returns, sma
 from stockml.models.persistence import save_model
 from stockml.models.registry import MODEL_REGISTRY, model_label
+from stockml.models.training import split_timeline
 from stockml.viz import charts
 from stockml.viz.theme import CATEGORICAL, model_color
 
@@ -861,6 +863,128 @@ def multi_ticker_context(metric: str) -> dict[str, Any]:
                     else ""
                 ),
             },
+        }
+
+    return _cached(key, build)
+
+
+def _param_grid_text(grid: dict[str, list[Any]]) -> str:
+    """``{"model__C": [0.1, 1.0]}`` -> ``"C from 0.1, 1.0"``; empty for untuned models."""
+    return "; ".join(
+        f"{key.removeprefix('model__')} from {', '.join(map(str, values))}"
+        for key, values in grid.items()
+    )
+
+
+def _about_results(runs: dict[str, TrainingRun]) -> dict[str, Any]:
+    """Headline test-period numbers across every ticker's latest direction run."""
+    results = [r for run in runs.values() for r in run.results.all()]
+    # The model each ticker would pick by training-period CV, never by its test score.
+    chosen = {t: max(run.results.all(), key=lambda r: r.cv_roc_auc_mean) for t, run in runs.items()}
+    aucs = [r.roc_auc for r in results]
+    return {
+        "n_pairs": len(results),
+        "auc_min": min(aucs),
+        "auc_max": max(aucs),
+        "n_tickers": len(runs),
+        "n_beat_naive": sum(chosen[t].accuracy > naive_accuracy(run) for t, run in runs.items()),
+        "test_start": min(run.test_start for run in runs.values()),
+        "test_end": max(run.test_end for run in runs.values()),
+        "trained_at": max(run.created_at for run in runs.values()),
+    }
+
+
+def _about_split_chart(ticker: str, run: TrainingRun) -> str | None:
+    """Timeline of one run's split, CV folds and walk-forward blocks (``None`` if unavailable)."""
+    try:
+        dates = get_prices(ticker).index
+    except NoDataError:
+        return None
+    index = dates[(dates >= pd.Timestamp(run.train_start)) & (dates <= pd.Timestamp(run.test_end))]
+    if not 0 < run.n_train < len(index):
+        return None
+    settings_used = run.config.get("model", {})
+    defaults = ExperimentConfig().model
+    timeline = split_timeline(
+        pd.DatetimeIndex(index),
+        run.n_train,
+        int(settings_used.get("cv_splits", defaults.cv_splits)),
+        int(settings_used.get("retrain_every", defaults.retrain_every))
+        if settings_used.get("walk_forward", defaults.walk_forward)
+        else None,
+    )
+    return figure_json(charts.split_timeline_chart(timeline, ticker_label(ticker)))
+
+
+def about_context() -> dict[str, Any]:
+    """Live figures for the About page: the universe, pipeline settings and headline results.
+
+    Never raises for missing data: before anything is fetched or trained, the parts that need
+    prices or training runs are simply left out and the page explains the method alone.
+    """
+    experiment = ExperimentConfig()
+    tickers = available_tickers()
+    runs = {t: latest_run(t) for t in trained_tickers()}
+    key = "about:" + ",".join(
+        [f"{t}={_prices_version(t)}" for t in tickers] + [f"{t}#{r.pk}" for t, r in runs.items()]
+    )
+
+    def build() -> dict[str, Any]:
+        universe = []
+        for t in tickers:
+            try:
+                dates = get_prices(t).index
+            except NoDataError:
+                continue
+            universe.append(
+                {
+                    "symbol": t,
+                    "name": ticker_label(t),
+                    "unit": price_unit(t),
+                    "first": dates[0].date(),
+                    "last": dates[-1].date(),
+                    "n_rows": len(dates),
+                }
+            )
+        stats = [
+            {"label": "Markets", "value": str(len(universe))},
+            {"label": "Features per day", "value": str(len(experiment.features.feature_columns))},
+            {"label": "Models", "value": str(len(experiment.model.models))},
+        ]
+        if universe:
+            first = min(u["first"] for u in universe)
+            last = max(u["last"] for u in universe)
+            stats[1:1] = [
+                {"label": "Daily prices", "value": f"{sum(u['n_rows'] for u in universe):,}"},
+                {"label": f"Years, {first:%Y} to {last:%Y}", "value": str(last.year - first.year)},
+            ]
+            stats.append({"label": f"Latest close · {last:%Y}", "value": f"{last.day} {last:%b}"})
+        split_ticker = next(iter(runs), None)
+        return {
+            "stats": stats,
+            "universe": universe,
+            "n_bars": sum(u["n_rows"] for u in universe),
+            "results": _about_results(runs) if runs else None,
+            "split_chart": _about_split_chart(split_ticker, runs[split_ticker])
+            if split_ticker
+            else None,
+            "models": [
+                {
+                    "label": spec.label,
+                    "color": model_color(spec.name),
+                    "tuning": _param_grid_text(spec.param_grid),
+                    "pca": spec.pca_components,
+                }
+                for name in experiment.model.models
+                if (spec := MODEL_REGISTRY.get(name))
+            ],
+            "features": experiment.features,
+            "model_config": experiment.model,
+            "train_share": 1.0 - experiment.model.test_size,
+            "data_config": DataConfig(),
+            "backtest_config": BacktestConfig(),
+            "analysis_config": AnalysisConfig(),
+            "targets": list(TARGET_LABELS.values()),
         }
 
     return _cached(key, build)

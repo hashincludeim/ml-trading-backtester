@@ -69,6 +69,10 @@ QUIET_FILL = "rgba(42, 120, 214, 0.12)"
 PRICE_COLOR = "#2a78d6"
 BAND_FILL = "rgba(42, 120, 214, 0.08)"
 REFERENCE_LINE = TEXT_MUTED
+# Evaluation timeline: rows a model learns from, the folds CV scores it on, the unseen test.
+SPLIT_TRAIN = BENCHMARK_FILL
+SPLIT_VALIDATION = CATEGORICAL[0]
+SPLIT_TEST = CATEGORICAL[1]
 
 SEQUENTIAL_BLUE: list[tuple[float, str]] = [
     (0.0, "#f3f8fe"),

@@ -11,3 +11,5 @@ staticfiles/
 .ipynb_checkpoints/
 .DS_Store
 claude.md
+/video/build/
+/video/out/

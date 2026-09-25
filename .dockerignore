@@ -14,3 +14,4 @@ tests
 data/train.log
 # Fitted models are kept for reuse offline; the dashboard reads predictions and metrics only.
 data/runs/**/*.joblib
+video

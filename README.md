@@ -61,6 +61,11 @@ theme; a header toggle switches to dark and remembers the choice.
 6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold, rebased prices,
    buy & hold risk vs return per stock, and cross-ticker return correlation.
 
+An **About** page (linked top right) explains what the site does and how, page by page, with a
+one-minute explainer video, a timeline of how each run splits its history for cross-validation,
+testing and walk-forward refits, the ground rules that keep results honest, and the limits. Its
+headline numbers are computed live from the latest training runs.
+
 ## Quick start
 
 ```bash
@@ -85,6 +90,27 @@ python web/manage.py train_models --all --jobs 4  # retrain so backtests include
 
 If you fetch during US trading hours, today's bar is provisional until the 16:00 New York close.
 A running server picks up new data and new training runs automatically.
+
+### Explainer video
+
+The one-minute video on the About page is an HTML animation (`video/explainer.html`) in the
+dashboard's own style, drawn from the real data and captured frame by frame. It is silent, with
+on-screen captions, so it also works as a muted autoplay clip elsewhere. The master copy is
+`video/out/stockml-explainer.mp4` (1920 × 1080, H.264); the site serves a copy from
+`web/dashboard/static/dashboard/video/`. To re-render it after new data or design changes:
+
+```bash
+pip install -e ".[video]"                       # Playwright + a bundled ffmpeg; uses your installed Chrome
+python web/manage.py runserver                  # in another terminal
+python video/export_data.py                     # real numbers -> video/build/data.js
+python video/capture_pages.py --site http://127.0.0.1:8000   # dashboard screenshots
+python video/render_video.py                    # ~2 minutes: MP4 + poster, copied into static
+```
+
+Open `video/explainer.html` in a browser to watch the animation live (`?t=20` holds one frame;
+space pauses, arrow keys step), or run `render_video.py --stills 4 20 45` to save a few frames.
+If the numbers change, update the transcript in
+`web/dashboard/templates/dashboard/_video_transcript.html` to match.
 
 ### Management commands
 
@@ -238,5 +264,6 @@ notebooks/          exploration notebook importing from stockml
 legacy/             original notebook export (reference only)
 data/               (git-ignored) cached prices, training runs, SQLite database
 deploy/             container entrypoint (gunicorn) and one-time Google Cloud setup script
+video/              explainer video: animation (HTML), data export, page capture, renderer
 .github/workflows/  CI checks, nightly data refresh, image build and deploy to Cloud Run
 ```

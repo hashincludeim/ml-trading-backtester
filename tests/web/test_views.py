@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.templatetags.static import static
 from django.test import Client
 from django.urls import reverse
 
@@ -181,3 +182,40 @@ def test_tables_mark_their_key_columns_for_phones(client: Client) -> None:
     with patch.object(services, "models_context", return_value=ctx):
         resp = client.get(reverse("dashboard:models"), {"ticker": "AMZN"})
     assert b'data-key-cols="1,4,8,9"' in resp.content
+
+
+def test_about_page_embeds_the_video_and_calls_the_service(client: Client) -> None:
+    ctx = {"stats": [], "universe": [], "results": None, "split_chart": None, "models": []}
+    with patch.object(services, "about_context", return_value=ctx) as svc:
+        resp = client.get(reverse("dashboard:about"))
+    assert resp.status_code == 200
+    svc.assert_called_once_with()
+    assert b"<video" in resp.content and b"stockml-explainer.mp4" in resp.content
+    assert b'class="masthead-link" href="/about/" aria-current="page"' in resp.content
+    assert b"Verdict so far" not in resp.content  # no results before training
+
+
+def test_every_page_links_to_about(client: Client) -> None:
+    with patch.object(services, "overview_context", return_value=_ctx("price", stats=[])):
+        resp = client.get(reverse("dashboard:overview"))
+    assert b'class="masthead-link" href="/about/"' in resp.content
+    assert b'href="/about/"' in resp.content.split(b"site-footer")[1]
+
+
+def test_explainer_video_is_served_in_byte_ranges(client: Client) -> None:
+    # Safari and iOS only play <video> from servers that answer Range requests; WhiteNoise does.
+    resp = client.get(static("dashboard/video/stockml-explainer.mp4"), HTTP_RANGE="bytes=0-99")
+    assert resp.status_code == 206
+    assert resp["Content-Type"] == "video/mp4"
+    assert resp["Content-Range"].startswith("bytes 0-99/")
+
+
+def test_overview_points_to_the_tour_and_other_pages_do_not(client: Client) -> None:
+    with patch.object(services, "overview_context", return_value=_ctx("price", stats=[])):
+        resp = client.get(reverse("dashboard:overview"))
+    assert b'class="tour-link"' in resp.content
+    assert b"one-minute tour" in resp.content
+    ctx = _ctx("indicators", stats=[], config=services.ExperimentConfig().features)
+    with patch.object(services, "indicators_context", return_value=ctx):
+        resp = client.get(reverse("dashboard:indicators"))
+    assert b'class="tour-link"' not in resp.content

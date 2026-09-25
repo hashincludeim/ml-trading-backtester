@@ -30,6 +30,7 @@
           <a href="{% url url_name %}{% if form.ticker.value and key != 'multi' %}?ticker={{ form.ticker.value|urlencode }}{% endif %}"{% if page == key %} aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
+      <a class="masthead-link" href="{% url 'dashboard:about' %}"{% if page == "about" %} aria-current="page"{% endif %}>About</a>
       <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark mode">
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -42,6 +43,7 @@
       <div class="page-head-text">
         <h1>{% block heading %}{% endblock %}</h1>
         <p class="lede">{% block intro %}{% endblock %}</p>
+        {% block after_intro %}{% endblock %}
       </div>
       {% block controls %}{% if form %}{% include "dashboard/_controls.html" %}{% endif %}{% endblock %}
     </div>
@@ -65,6 +67,7 @@
       <div class="footer-about">
         <a class="brand" href="{% url 'dashboard:overview' %}"><svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg>StockML</a>
         <p>Next-day stock direction models, backtests and interactive charts.</p>
+        <p class="footer-more"><a href="{% url 'dashboard:about' %}">How it works, with a one-minute video</a></p>
       </div>
       <div>
         <h2>Data</h2>

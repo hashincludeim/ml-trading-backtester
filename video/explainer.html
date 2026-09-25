@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockML explainer</title>
+<!--
+  The StockML explainer video, as one deterministic animation: renderAt(t) draws the frame at
+  t seconds from the numbers in build/data.js and the screenshots in build/shots/. Open this file
+  in a browser to watch it play (?t=12.5 freezes one frame; space pauses, arrow keys step);
+  render_video.py captures it frame by frame with ?render.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=JetBrains+Mono:wght@400;500&display=block" rel="stylesheet">
+<style>
+  :root {
+    /* Light palette of the dashboard (dashboard.css / stockml.viz.theme). */
+    --bg: #ffffff;
+    --surface-2: #f5f5f4;
+    --border: #e4e4e7;
+    --border-2: #c4c4ca;
+    --text: #111113;
+    --text-2: #4a4a50;
+    --text-3: #6e6e76;
+    --faint: #a1a1a8;
+    --up: #1baf7a;
+    --down: #e34948;
+    --pos: #0b7a4b;
+    --neg: #c0392f;
+    --train: #c9c9ce;
+    --validation: #2a78d6;
+    --test: #eb6834;
+    --serif: "Newsreader", Georgia, serif;
+    --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  html, body { margin: 0; background: var(--bg); }
+  body.preview { background: #d9d9dc; overflow: hidden; height: 100vh; }
+  #stage {
+    position: relative; width: 1920px; height: 1080px; overflow: hidden;
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+    transform-origin: 0 0;
+  }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .abs { position: absolute; }
+  svg { overflow: visible; }
+  svg text { font-family: var(--sans); }
+
+  /* chrome: brand, chapter nav and hairline, like the dashboard masthead */
+  #chrome { position: absolute; inset: 0 0 auto 0; height: 106px; opacity: 0; }
+  #chrome .brand { left: 120px; top: 34px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-family: var(--serif); font-size: 36px; font-weight: 600; letter-spacing: -.02em; }
+  .brand .mark { width: 26px; height: 26px; }
+  #chapters { position: absolute; right: 120px; top: 0; height: 104px; display: flex; gap: 46px; }
+  #chapters span { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 500; color: var(--faint); }
+  #chapters b { font-size: 14px; font-weight: 600; letter-spacing: .08em; }
+  #chapter-bar { position: absolute; top: 101px; height: 3px; background: var(--text); }
+  #chrome .rule { position: absolute; left: 0; right: 0; top: 104px; height: 1px; background: var(--border); }
+  #asof { right: 120px; top: 122px; font-size: 17px; color: var(--text-3); opacity: 0; }
+
+  .kicker { left: 120px; top: 156px; font-size: 19px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+  .headline { left: 120px; top: 188px; margin: 0; font-family: var(--serif); font-size: 70px; font-weight: 500; letter-spacing: -.022em; line-height: 1.05; }
+  .caption { left: 120px; top: 988px; width: 1500px; margin: 0; font-size: 27px; line-height: 1.4; color: var(--text-2); }
+  .caption b, .strip b { color: var(--text); font-weight: 600; }
+  .label-sm { font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
+
+  /* scene 1: title */
+  #s1 .lockup { left: 0; right: 0; top: 206px; justify-content: center; font-size: 60px; gap: 20px; }
+  #s1 .lockup .mark { width: 50px; height: 50px; }
+  #question { left: 0; right: 0; top: 330px; margin: 0; text-align: center; font-family: var(--serif); font-size: 108px; font-weight: 500; line-height: 1.06; letter-spacing: -.028em; }
+  #question .w { display: inline-block; }
+  #triad { left: 0; right: 0; top: 590px; margin: 0; text-align: center; font-size: 34px; color: var(--text-2); }
+
+  /* scene 2: data */
+  .strip { left: 120px; top: 986px; font-size: 26px; color: var(--text-2); }
+  .strip .num { font-size: 26px; font-weight: 600; color: var(--text); }
+
+  /* scene 3: features */
+  #card { left: 1190px; top: 350px; width: 610px; }
+  #card .card-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 14px; border-bottom: 2px solid var(--text); }
+  #card .card-head span:last-child { font-size: 24px; font-weight: 600; }
+  .frow { display: flex; justify-content: space-between; align-items: baseline; padding: 15px 0; border-bottom: 1px solid var(--border); font-size: 25px; }
+  .frow .k { color: var(--text-2); }
+  .frow .v { font-weight: 600; font-size: 27px; }
+  .frow.more { color: var(--text-3); font-size: 21px; border-bottom: 0; }
+  #target { margin-top: 18px; padding: 18px 22px; background: var(--surface-2); border-radius: 10px; display: flex; justify-content: space-between; align-items: baseline; font-size: 25px; }
+  #target .v { font-weight: 700; font-size: 28px; }
+
+  /* scene 4: models */
+  .legend { display: flex; gap: 34px; font-size: 20px; color: var(--text-2); }
+  .legend i { display: inline-block; width: 16px; height: 16px; border-radius: 3px; margin-right: 10px; vertical-align: -1px; }
+  .row-label { font-size: 21px; color: var(--text-2); text-align: right; width: 180px; }
+  .model-label { display: flex; align-items: center; gap: 14px; font-size: 25px; font-weight: 500; }
+  .model-label i { width: 14px; height: 14px; border-radius: 3px; }
+
+  /* scene 5: backtest */
+  #panel { left: 1430px; top: 360px; width: 370px; }
+  .track { position: relative; height: 6px; margin: 28px 0 12px; background: var(--border); border-radius: 3px; }
+  .track .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text); border-radius: 3px; }
+  .track .thumb { position: absolute; top: -11px; width: 28px; height: 28px; margin-left: -14px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 5px var(--bg); }
+  #cost-value { font-size: 44px; font-weight: 600; letter-spacing: -.02em; }
+  .sharpe-row { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 22px; color: var(--text-2); }
+  .sharpe-row .v { font-size: 40px; font-weight: 600; color: var(--text); letter-spacing: -.02em; }
+  .sharpe-row i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 10px; }
+  .sharpe-row i.dash { width: 22px; height: 0; border-radius: 0; border-top: 3px dashed var(--text-2); vertical-align: 5px; }
+  #badge { display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; font-size: 22px; font-weight: 600; }
+  #badge::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+
+  /* scene 6: explore */
+  #pages { left: 120px; top: 350px; width: 440px; }
+  .page-item { position: relative; padding: 12px 0; border-top: 1px solid var(--border); }
+  .page-item .n { font-family: var(--serif); font-size: 38px; font-weight: 500; letter-spacing: -.015em; line-height: 1.1; }
+  .page-item .q { margin-top: 4px; font-size: 19px; color: var(--text-3); }
+  .page-item .bar { position: absolute; left: -24px; top: 14px; bottom: 14px; width: 4px; background: var(--text); }
+  #extras { left: 120px; top: 962px; width: 460px; font-size: 22px; color: var(--text); font-weight: 600; line-height: 1.4; }
+  #browser { left: 610px; top: 318px; width: 1190px; height: 704px; border: 1px solid var(--border-2); border-radius: 14px; overflow: hidden; background: var(--bg); box-shadow: 0 30px 80px rgba(17, 17, 19, .10); }
+  #browser .top { position: absolute; left: 0; right: 0; top: 0; height: 48px; background: var(--surface-2); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 9px; padding-left: 20px; }
+  #browser .dot { width: 13px; height: 13px; border-radius: 50%; background: #d4d4d8; }
+  #browser .url { margin-left: 22px; padding: 6px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono); font-size: 16px; color: var(--text-2); min-width: 520px; }
+  #viewport { position: absolute; left: 0; right: 0; top: 49px; bottom: 0; overflow: hidden; }
+  #viewport img { position: absolute; left: 0; top: 0; width: 100%; opacity: 0; }
+  #phone { left: 1500px; top: 1080px; width: 300px; height: 620px; border: 11px solid #111113; border-radius: 44px; overflow: hidden; background: var(--bg); box-shadow: 0 30px 80px rgba(17, 17, 19, .22); }
+  #phone img { position: absolute; left: 0; top: 0; width: 100%; }
+
+  /* scene 7: outro */
+  #verdict { left: 240px; top: 170px; width: 1440px; padding: 50px 64px 56px; box-sizing: border-box; background: var(--surface-2); border-radius: 18px; }
+  #verdict .label-sm { font-size: 18px; }
+  #verdict h2 { margin: 18px 0 20px; font-family: var(--serif); font-size: 64px; font-weight: 500; line-height: 1.08; letter-spacing: -.022em; }
+  #verdict p { margin: 0; font-size: 30px; line-height: 1.45; color: var(--text-2); }
+  #s7 .lockup { left: 0; right: 0; top: 660px; justify-content: center; font-size: 60px; gap: 20px; }
+  #s7 .lockup .mark { width: 50px; height: 50px; }
+  #s7 .url { left: 0; right: 0; top: 770px; text-align: center; font-family: var(--mono); font-size: 29px; color: var(--text); }
+  #s7 .stack { left: 0; right: 0; top: 830px; text-align: center; font-size: 25px; color: var(--text-3); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="14" height="14" fill="#fafafa"/><line x1="0" y1="0" x2="0" y2="14" stroke="#e4e4e7" stroke-width="5"/>
+    </pattern>
+  </defs>
+</svg>
+
+<div id="stage">
+  <div id="chrome">
+    <div class="brand abs"><svg class="mark coin" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path class="half" d="M1.25 10a8.75 8.75 0 0 1 17.5 0z" fill="currentColor"/></svg>StockML</div>
+    <nav id="chapters"></nav>
+    <div id="chapter-bar"></div>
+    <div class="rule"></div>
+  </div>
+  <div id="asof" class="abs"></div>
+
+  <section class="scene" id="s1">
+    <svg class="abs" id="s1-line" width="1920" height="1080" style="left:0;top:0"></svg>
+    <div class="brand lockup abs"><svg class="mark coin" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path class="half" d="M1.25 10a8.75 8.75 0 0 1 17.5 0z" fill="currentColor"/></svg>StockML</div>
+    <h1 id="question" class="abs"></h1>
+    <p id="triad" class="abs">Predict it. Backtest it. Explain every step.</p>
+  </section>
+
+  <section class="scene" id="s2">
+    <div class="kicker abs">01 · The data</div>
+    <h2 class="headline abs" id="s2-head"></h2>
+    <svg class="abs" id="s2-chart" width="1680" height="620" style="left:120px;top:330px"></svg>
+    <div class="strip abs" id="s2-strip"></div>
+  </section>
+
+  <section class="scene" id="s3">
+    <div class="kicker abs">02 · Features</div>
+    <h2 class="headline abs" id="s3-head"></h2>
+    <svg class="abs" id="s3-chart" width="1000" height="600" style="left:120px;top:340px"></svg>
+    <div class="abs" id="card"></div>
+    <p class="caption abs" id="s3-caption"><b>No look-ahead.</b> Day <i>t</i> sees only data up to its own close, and tests change future prices to prove no earlier feature moves.</p>
+  </section>
+
+  <section class="scene" id="s4">
+    <div class="kicker abs">03 · Models</div>
+    <h2 class="headline abs" id="s4-head"></h2>
+    <div class="abs" id="s4-split" style="left:0;top:0;width:1920px;height:1080px"></div>
+    <div class="abs" id="s4-auc" style="left:0;top:0;width:1920px;height:1080px"></div>
+  </section>
+
+  <section class="scene" id="s5">
+    <div class="kicker abs">04 · Backtest</div>
+    <h2 class="headline abs">Trade the predictions. Then pay the costs.</h2>
+    <svg class="abs" id="s5-chart" width="1260" height="620" style="left:120px;top:330px"></svg>
+    <div class="abs" id="panel"></div>
+    <p class="caption abs" id="s5-caption"></p>
+  </section>
+
+  <section class="scene" id="s6">
+    <div class="kicker abs">05 · Explore</div>
+    <h2 class="headline abs" id="s6-head"></h2>
+    <div class="abs" id="pages"></div>
+    <div class="abs" id="extras">Light and dark themes, phone layouts too.</div>
+    <div class="abs" id="browser"><div class="top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url" id="url"></span></div><div id="viewport"></div></div>
+    <div class="abs" id="phone"></div>
+  </section>
+
+  <section class="scene" id="s7">
+    <div class="abs" id="verdict">
+      <div class="label-sm">Verdict</div>
+      <h2>Tomorrow’s direction is close to a coin flip, and the site says so.</h2>
+      <p>What it offers instead: a leak-free method, honest baselines, and charts that explain every step.</p>
+    </div>
+    <div class="brand lockup abs"><svg class="mark coin" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path class="half" d="M1.25 10a8.75 8.75 0 0 1 17.5 0z" fill="currentColor"/></svg>StockML</div>
+    <div class="url abs" id="s7-url"></div>
+    <div class="stack abs">Python · pandas · scikit-learn · Plotly · Django</div>
+  </section>
+</div>
+
+<script src="build/data.js"></script>
+<script src="build/shots/shots.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const D = window.STOCKML_VIDEO;
+  const SHOTS = window.STOCKML_SHOTS;
+  const FPS = 30;
+  // Scene windows in seconds; neighbours overlap briefly so they cross-fade.
+  const SCENES = [
+    { id: "s1", start: 0.0, end: 5.2 },
+    { id: "s2", start: 5.0, end: 13.4, chapter: 0 },
+    { id: "s3", start: 13.2, end: 21.8, chapter: 1 },
+    { id: "s4", start: 21.6, end: 32.2, chapter: 2 },
+    { id: "s5", start: 32.0, end: 41.2, chapter: 3 },
+    { id: "s6", start: 41.0, end: 53.0, chapter: 4 },
+    { id: "s7", start: 52.8, end: 58.5 },
+  ];
+  const DURATION = SCENES[SCENES.length - 1].end;
+  const CHAPTERS = ["Data", "Features", "Models", "Backtest", "Explore"];
+  const FADE = 0.35;
+
+  // ---- helpers --------------------------------------------------------------------------
+  const $ = (sel) => document.querySelector(sel);
+  const NS = "http://www.w3.org/2000/svg";
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+  const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+  const prog = (t, a, b, ease = easeOut) => ease(clamp((t - a) / (b - a)));
+  const fmtInt = (n) => Math.round(n).toLocaleString("en-GB");
+
+  function svg(tag, attrs, parent) {
+    const node = document.createElementNS(NS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+  function html(tag, cls, parent, content) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (content !== undefined) node.innerHTML = content;
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+  /* Fade and lift an element in at `a` (and optionally out at `out`). */
+  function reveal(node, t, a, dur = 0.6, dy = 26, out = null) {
+    let o = prog(t, a, a + dur);
+    let y = (1 - o) * dy;
+    if (out !== null) {
+      const q = prog(t, out, out + 0.4, easeInOut);
+      o *= 1 - q;
+      y -= q * 14;
+    }
+    node.style.opacity = o;
+    node.style.transform = `translateY(${y}px)`;
+  }
+  function path(xs, ys) {
+    let d = "";
+    for (let i = 0; i < xs.length; i++) d += (i ? "L" : "M") + xs[i].toFixed(1) + " " + ys[i].toFixed(1);
+    return d;
+  }
+  /* Push labels apart vertically so none are closer than `gap`, keeping them inside [lo, hi]. */
+  function spread(items, gap, lo, hi) {
+    items.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + gap);
+    const over = items.length ? items[items.length - 1].y - hi : 0;
+    if (over > 0) items.forEach((it) => (it.y -= over));
+    for (let i = items.length - 2; i >= 0; i--) items[i].y = Math.min(items[i].y, items[i + 1].y - gap);
+    if (items.length && items[0].y < lo) {
+      const under = lo - items[0].y;
+      items.forEach((it) => (it.y += under));
+    }
+    return items;
+  }
+  /* The site's mark is a coin; spinning it shows the down half on its back. */
+  function spinCoin(node, turns) {
+    const angle = turns * 2 * Math.PI;
+    const c = Math.cos(angle);
+    node.style.transform = `scaleX(${Math.max(Math.abs(c), 0.04) * Math.sign(c || 1)})`;
+    node.querySelector(".half").setAttribute("transform", c < 0 ? "rotate(180 10 10)" : "");
+  }
+  const yearTicks = (a, b, step) => {
+    const out = [];
+    for (let y = Math.ceil(a / step) * step; y <= b; y += step) out.push(y);
+    return out;
+  };
+  const decimalYear = (s) => {
+    const d = new Date(s + "T00:00:00Z");
+    return d.getUTCFullYear() + (d - Date.UTC(d.getUTCFullYear(), 0, 1)) / (365.25 * 864e5);
+  };
+
+  // ---- build: create every element once from the data ------------------------------------
+  const R = {}; // references used by render()
+
+  function buildChrome() {
+    const nav = $("#chapters");
+    R.chapterEls = CHAPTERS.map((name, i) => html("span", "", nav, `<b>0${i + 1}</b>${name}`));
+    R.chapterBar = $("#chapter-bar");
+    const navLeft = nav.getBoundingClientRect().left - $("#stage").getBoundingClientRect().left;
+    R.chapterPos = R.chapterEls.map((e) => ({ left: navLeft + e.offsetLeft, width: e.offsetWidth }));
+    $("#asof").textContent = `Prices to ${D.as_of} · Yahoo Finance`;
+  }
+
+  function buildTitle() {
+    const words = ["Will", "tomorrow’s", "close", "be", "<br>", "higher", "than", "today’s?"];
+    const q = $("#question");
+    R.words = [];
+    words.forEach((w) => {
+      if (w === "<br>") { q.appendChild(document.createElement("br")); return; }
+      R.words.push(html("span", "w", q, w));
+      q.appendChild(document.createTextNode(" "));
+    });
+    // A faint S&P 500 line runs along the bottom and stops at today, with tomorrow unknown.
+    const g = $("#s1-line");
+    const s = D.prices[0];
+    const x0 = 120, x1 = 1560, yTop = 760, yBot = 990;
+    const lo = Math.log10(Math.min(...s.y)), hi = Math.log10(Math.max(...s.y));
+    const sx = (x) => x0 + ((x - s.x[0]) / (s.x[s.x.length - 1] - s.x[0])) * (x1 - x0);
+    const sy = (v) => yBot - ((Math.log10(v) - lo) / (hi - lo)) * (yBot - yTop);
+    const clip = svg("clipPath", { id: "s1-clip" }, svg("defs", {}, g));
+    R.s1Clip = svg("rect", { x: 0, y: 0, width: 0, height: 1080 }, clip);
+    svg("path", { d: path(s.x.map(sx), s.y.map(sy)), fill: "none", stroke: "#cfcfd4", "stroke-width": 3, "stroke-linejoin": "round", "clip-path": "url(#s1-clip)" }, g);
+    const ex = x1, ey = sy(s.y[s.y.length - 1]);
+    R.s1End = svg("g", {}, g);
+    svg("circle", { cx: ex, cy: ey, r: 8, fill: "#111113" }, R.s1End);
+    const up = svg("g", {}, R.s1End), down = svg("g", {}, R.s1End);
+    svg("path", { d: `M${ex} ${ey} L${ex + 110} ${ey - 66}`, stroke: "#1baf7a", "stroke-width": 3, "stroke-dasharray": "8 7", fill: "none" }, up);
+    svg("text", { x: ex + 124, y: ey - 58, fill: "#0b7a4b", "font-size": 26, "font-weight": 600 }, up).textContent = "Up?";
+    svg("path", { d: `M${ex} ${ey} L${ex + 110} ${ey + 66}`, stroke: "#e34948", "stroke-width": 3, "stroke-dasharray": "8 7", fill: "none" }, down);
+    svg("text", { x: ex + 124, y: ey + 76, fill: "#c0392f", "font-size": 26, "font-weight": 600 }, down).textContent = "Down?";
+    R.s1Up = up; R.s1Down = down;
+  }
+
+  function buildPrices() {
+    $("#s2-head").textContent = `${D.last_year - D.first_year} years of daily prices from ${D.n_markets} markets`;
+    const g = $("#s2-chart");
+    const P = { l: 84, r: 1290, t: 44, b: 560 };
+    const x0 = D.first_year, x1 = Math.max(...D.prices.map((s) => s.x[s.x.length - 1]));
+    const all = D.prices.flatMap((s) => s.y);
+    const lo = Math.log10(Math.min(...all) * 0.7), hi = Math.log10(Math.max(...all) * 1.4);
+    const sx = (x) => P.l + ((x - x0) / (x1 - x0)) * (P.r - P.l);
+    const sy = (v) => P.b - ((Math.log10(v) - lo) / (hi - lo)) * (P.b - P.t);
+    R.s2 = { sx, x0, x1, P };
+    for (let e = Math.ceil(lo); e <= Math.floor(hi); e++) {
+      const v = Math.pow(10, e), y = sy(v);
+      svg("line", { x1: P.l, x2: P.r, y1: y, y2: y, stroke: e === 0 ? "#c4c4ca" : "#ebebee", "stroke-width": e === 0 ? 1.5 : 1 }, g);
+      svg("text", { x: P.l - 16, y: y + 7, "text-anchor": "end", "font-size": 19, fill: "#6e6e76" }, g).textContent = "×" + (v < 1 ? v.toFixed(1) : fmtInt(v));
+    }
+    svg("text", { x: 0, y: 8, "font-size": 18, fill: "#6e6e76" }, g).textContent = "Price relative to its first day (log scale)";
+    R.s2Ticks = yearTicks(x0, x1, 5).map((yr) => {
+      const node = svg("text", { x: sx(yr), y: P.b + 36, "text-anchor": "middle", "font-size": 19, fill: "#6e6e76" }, g);
+      node.textContent = yr;
+      return { x: sx(yr), node };
+    });
+    svg("line", { x1: P.l, x2: P.r, y1: P.b, y2: P.b, stroke: "#c4c4ca" }, g);
+    const clip = svg("clipPath", { id: "s2-clip" }, svg("defs", {}, g));
+    R.s2Clip = svg("rect", { x: 0, y: -20, width: 0, height: 640 }, clip);
+    const lines = svg("g", { "clip-path": "url(#s2-clip)" }, g);
+    D.prices.forEach((s) => {
+      svg("path", { d: path(s.x.map(sx), s.y.map(sy)), fill: "none", stroke: s.color, "stroke-width": 3.5, "stroke-linejoin": "round" }, lines);
+    });
+    // Market events, as on the Overview page: over the lines, labels haloed, staggered in rows.
+    R.s2Events = (D.events || []).map(([date, label], i) => {
+      const x = sx(decimalYear(date));
+      const node = svg("g", { opacity: 0 }, g);
+      svg("line", { x1: x, x2: x, y1: P.t + 30, y2: P.b, stroke: "#8f8f97", "stroke-dasharray": "3 5" }, node);
+      svg("text", { x: x + 8, y: P.t + 22 + (i % 3) * 26, "font-size": 17, fill: "#4a4a50", stroke: "#fff", "stroke-width": 6, "paint-order": "stroke", "stroke-linejoin": "round" }, node).textContent = label;
+      return { x, node };
+    });
+    R.s2Cursor = svg("g", {}, g);
+    svg("line", { x1: 0, x2: 0, y1: P.t, y2: P.b, stroke: "#111113", "stroke-width": 1.5 }, R.s2Cursor);
+    R.s2Year = svg("text", { x: 0, y: P.b + 36, "text-anchor": "middle", "font-size": 20, "font-weight": 700, fill: "#111113" }, R.s2Cursor);
+    // End labels: name and how many times the price multiplied.
+    const labels = spread(D.prices.map((s) => ({ s, y: sy(s.y[s.y.length - 1]) })), 56, P.t + 10, P.b - 10);
+    R.s2Labels = labels.map(({ s, y }) => {
+      const node = svg("g", { opacity: 0 }, g);
+      svg("line", { x1: sx(s.x[s.x.length - 1]) + 6, x2: P.r + 22, y1: sy(s.y[s.y.length - 1]), y2: y, stroke: s.color, "stroke-width": 1.5 }, node);
+      svg("rect", { x: P.r + 28, y: y - 22, width: 14, height: 14, rx: 3, fill: s.color }, node);
+      svg("text", { x: P.r + 52, y: y - 9, "font-size": 22, "font-weight": 600, fill: "#111113" }, node).textContent = s.name;
+      const since = s.first_year > D.first_year ? ` since ${s.first_year}` : ` since ${D.first_year}`;
+      svg("text", { x: P.r + 52, y: y + 18, "font-size": 19, fill: "#4a4a50" }, node).textContent = `×${s.multiple >= 20 ? Math.round(s.multiple) : s.multiple}${since}`;
+      return node;
+    });
+    $("#s2-strip").innerHTML = `<span class="num" id="s2-count">0</span> daily prices, adjusted for splits and dividends, cached as Parquet and <b>refreshed every weeknight</b>.`;
+    R.s2Count = $("#s2-count");
+  }
+
+  function fmtFeature(v, fmt) {
+    const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+    const a = Math.abs(v);
+    switch (fmt) {
+      case "num1": return v.toFixed(1);
+      case "num2": return v.toFixed(2);
+      case "pct1": return sign + (a * 100).toFixed(1) + "%";
+      case "pct2": return sign + (a * 100).toFixed(2) + "%";
+      case "pct3": return sign + (a * 100).toFixed(3) + "%";
+      case "pct2day": return (a * 100).toFixed(2) + "% a day";
+      case "times": return v.toFixed(2) + "×";
+      default: return String(v);
+    }
+  }
+
+  function buildFeatures() {
+    const F = D.features;
+    $("#s3-head").textContent = `Each day becomes ${F.n_features} features, from the past only`;
+    const g = $("#s3-chart");
+    const P = { l: 90, r: 960, t: 112, b: 540 };
+    const n = F.close.length; // labelled days plus tomorrow
+    const lo = Math.min(...F.close), hi = Math.max(...F.close), pad = (hi - lo) * 0.12;
+    const sx = (i) => P.l + (i / (n - 1)) * (P.r - P.l);
+    const sy = (v) => P.b - ((v - (lo - pad)) / (hi - lo + 2 * pad)) * (P.b - P.t);
+    R.s3 = { sx, sy, P, n };
+    const step = Math.pow(10, Math.floor(Math.log10((hi - lo) / 3)));
+    const tick = Math.ceil((hi - lo) / 4 / step) * step;
+    for (let v = Math.ceil((lo - pad) / tick) * tick; v <= hi + pad; v += tick) {
+      svg("line", { x1: P.l, x2: P.r, y1: sy(v), y2: sy(v), stroke: "#ebebee" }, g);
+      svg("text", { x: P.l - 14, y: sy(v) + 7, "text-anchor": "end", "font-size": 18, fill: "#6e6e76" }, g).textContent = fmtInt(v);
+    }
+    svg("text", { x: 0, y: 14, "font-size": 18, fill: "#6e6e76" }, g).textContent = `${F.name} close, index points`;
+    R.s3Future = svg("rect", { x: 0, y: P.t, width: 0, height: P.b - P.t, fill: "url(#hatch)" }, g);
+    R.s3FutureLabel = svg("text", { x: 0, y: (P.t + P.b) / 2, "text-anchor": "middle", "font-size": 22, "font-weight": 600, fill: "#6e6e76" }, g);
+    R.s3FutureLabel.innerHTML = '<tspan x="0" dy="0">Future:</tspan><tspan x="0" dy="30">hidden</tspan>';
+    const clip = svg("clipPath", { id: "s3-clip" }, svg("defs", {}, g));
+    R.s3Clip = svg("rect", { x: 0, y: 0, width: 0, height: 600 }, clip);
+    const xs = F.close.map((_, i) => sx(i)), ys = F.close.map(sy);
+    svg("path", { d: path(xs.slice(0, n - 1), ys.slice(0, n - 1)), fill: "none", stroke: "#111113", "stroke-width": 3.5, "stroke-linejoin": "round", "clip-path": "url(#s3-clip)" }, g);
+    // Tomorrow: revealed only at the end, coloured by the label.
+    const upNext = F.target[F.target.length - 1] === 1;
+    R.s3Next = svg("g", { opacity: 0 }, g);
+    svg("path", { d: `M${xs[n - 2]} ${ys[n - 2]} L${xs[n - 1]} ${ys[n - 1]}`, stroke: upNext ? "#1baf7a" : "#e34948", "stroke-width": 3.5, "stroke-dasharray": "7 6" }, R.s3Next);
+    svg("circle", { cx: xs[n - 1], cy: ys[n - 1], r: 8, fill: upNext ? "#1baf7a" : "#e34948" }, R.s3Next);
+    R.s3Cursor = svg("g", {}, g);
+    svg("line", { x1: 0, x2: 0, y1: P.t - 6, y2: P.b, stroke: "#111113", "stroke-width": 1.5 }, R.s3Cursor);
+    R.s3Dot = svg("circle", { cx: 0, cy: 0, r: 8, fill: "#111113", stroke: "#fff", "stroke-width": 3 }, g);
+    R.s3Pill = svg("g", {}, g);
+    svg("rect", { x: -100, y: P.t - 58, width: 200, height: 40, rx: 20, fill: "#111113" }, R.s3Pill);
+    R.s3PillText = svg("text", { x: 0, y: P.t - 31, "text-anchor": "middle", "font-size": 19, "font-weight": 600, fill: "#fff" }, R.s3Pill);
+    svg("line", { x1: P.l, x2: P.r, y1: P.b, y2: P.b, stroke: "#c4c4ca" }, g);
+    R.s3Dates = svg("text", { x: P.l, y: P.b + 34, "font-size": 18, fill: "#6e6e76" }, g);
+    R.s3Dates.textContent = F.dates[0];
+    svg("text", { x: P.r, y: P.b + 34, "text-anchor": "end", "font-size": 18, fill: "#6e6e76" }, g).textContent = F.dates[n - 1];
+
+    const card = $("#card");
+    const head = html("div", "card-head", card);
+    html("span", "label-sm", head, "Features for day t");
+    R.cardDate = html("span", "", head, "");
+    R.featureVals = F.features.map((f) => {
+      const row = html("div", "frow", card);
+      html("span", "k", row, f.label);
+      return html("span", "v", row, "");
+    });
+    html("div", "frow more", card, `+ ${F.n_features - F.features.length} more: moving-average ratios, RSI, MACD, volatility…`);
+    R.target = html("div", "", card);
+    R.target.id = "target";
+    html("span", "k", R.target, "Label: does tomorrow close higher?");
+    html("span", "v", R.target, upNext ? "Yes · 1" : "No · 0").style.color = upNext ? "#0b7a4b" : "#c0392f";
+  }
+
+  function buildModels() {
+    const M = D.models;
+    $("#s4-head").textContent = `${D.n_models} models, scored only on days they never saw`;
+    // Part A: the chronological split and expanding cross-validation folds.
+    const box = $("#s4-split");
+    const legend = html("div", "legend abs", box, `<span><i style="background:var(--train)"></i>Training rows</span><span><i style="background:var(--validation)"></i>Validation (CV score)</span><span><i style="background:var(--test)"></i>Test period (unseen)</span>`);
+    legend.style.cssText = "left:330px;top:338px";
+    R.s4Legend = legend;
+    const stages = [...new Set(M.blocks.map((b) => b.stage))];
+    const x0 = Math.min(...M.blocks.map((b) => b.start)), x1 = Math.max(...M.blocks.map((b) => b.end));
+    const L = 330, Rr = 1800, top = 400, rowH = 66, barH = 36;
+    const sx = (x) => L + ((x - x0) / (x1 - x0)) * (Rr - L);
+    const g = svg("svg", { width: 1920, height: 1080 }, box);
+    g.style.cssText = "position:absolute;left:0;top:0";
+    R.s4Rows = stages.map((stage, i) => {
+      const y = top + i * rowH;
+      const label = html("div", "row-label abs", box, stage === "Final fit" ? "Final model" : stage);
+      label.style.cssText = `left:110px;top:${y + 4}px`;
+      const blocks = M.blocks.filter((b) => b.stage === stage).map((b) => {
+        const rect = svg("rect", { x: sx(b.start), y, width: 0, height: barH, rx: 4, fill: `var(--${b.role})` }, g);
+        return { rect, w: sx(b.end) - sx(b.start), b };
+      });
+      return { label, blocks, y };
+    });
+    const last = R.s4Rows[R.s4Rows.length - 1];
+    const test = last.blocks.find((k) => k.b.role === "test");
+    const train = last.blocks.find((k) => k.b.role === "train");
+    R.s4TestText = svg("text", { x: sx(test.b.start) + 16, y: last.y + 25, "font-size": 19, "font-weight": 600, fill: "#fff", opacity: 0 }, g);
+    R.s4TestText.textContent = `Test · ${Math.round((1 - M.train_share) * 100)}%`;
+    R.s4TrainText = svg("text", { x: sx(train.b.start) + 16, y: last.y + 25, "font-size": 19, "font-weight": 600, fill: "#111113", opacity: 0 }, g);
+    R.s4TrainText.textContent = `Train · ${Math.round(M.train_share * 100)}%`;
+    const axisY = top + stages.length * rowH + 6;
+    R.s4Axis = svg("g", { opacity: 0 }, g);
+    svg("line", { x1: L, x2: Rr, y1: axisY, y2: axisY, stroke: "#c4c4ca" }, R.s4Axis);
+    yearTicks(x0, x1, 5).forEach((yr) => {
+      svg("text", { x: sx(yr), y: axisY + 30, "text-anchor": "middle", "font-size": 19, fill: "#6e6e76" }, R.s4Axis).textContent = yr;
+    });
+    R.s4SplitCaption = html("p", "caption abs", box, `Split in time, never shuffled. Settings are tuned on <b>${M.cv_splits} expanding-window folds</b> of the training years; the test period (<b>${M.test_start} to ${M.test_end}</b>, ${fmtInt(M.n_test)} days) is used once, at the end.`);
+    R.s4SplitCaption.style.top = "900px";
+
+    // Part B: every model's test ROC AUC on every market, around the coin-flip line.
+    const auc = $("#s4-auc");
+    const A0 = 0.45, A1 = 0.55, AL = 700, AR = 1700;
+    const ax = (v) => AL + ((clamp(v, A0, A1) - A0) / (A1 - A0)) * (AR - AL);
+    const g2 = svg("svg", { width: 1920, height: 1080 }, auc);
+    g2.style.cssText = "position:absolute;left:0;top:0";
+    const rTop = 400, rH = 62;
+    const yEnd = rTop + M.models.length * rH;
+    R.s4Grid = svg("g", {}, g2);
+    [0.46, 0.48, 0.5, 0.52, 0.54].forEach((v) => {
+      svg("line", { x1: ax(v), x2: ax(v), y1: rTop - 20, y2: yEnd - 20, stroke: "#ebebee" }, R.s4Grid);
+      svg("text", { x: ax(v), y: yEnd + 14, "text-anchor": "middle", "font-size": 19, fill: "#6e6e76" }, R.s4Grid).textContent = v.toFixed(2);
+    });
+    svg("text", { x: (AL + AR) / 2, y: yEnd + 50, "text-anchor": "middle", "font-size": 19, fill: "#4a4a50" }, R.s4Grid).textContent = "Test ROC AUC, one dot per market (0.50 = guessing)";
+    svg("line", { x1: ax(0.5), x2: ax(0.5), y1: rTop - 44, y2: yEnd - 20, stroke: "#111113", "stroke-width": 2, "stroke-dasharray": "6 6" }, R.s4Grid);
+    svg("text", { x: ax(0.5), y: rTop - 54, "text-anchor": "middle", "font-size": 20, "font-weight": 600, fill: "#111113" }, R.s4Grid).textContent = "Coin flip";
+    svg("text", { x: AL, y: rTop - 54, "font-size": 18, fill: "#6e6e76" }, R.s4Grid).textContent = "← worse than chance";
+    svg("text", { x: AR, y: rTop - 54, "text-anchor": "end", "font-size": 18, fill: "#6e6e76" }, R.s4Grid).textContent = "better than chance →";
+    R.s4Models = M.models.map((m, i) => {
+      const y = rTop + i * rH;
+      const label = html("div", "model-label abs", auc, `<i style="background:${m.color}"></i>${m.label}`);
+      label.style.cssText = `left:120px;top:${y - 36}px`;
+      svg("line", { x1: AL, x2: AR, y1: y - 20, y2: y - 20, stroke: "#f3f3f4" }, g2);
+      const dots = m.aucs.map((a) => ({ c: svg("circle", { cx: ax(0.5), cy: y - 20, r: 11, fill: m.color, stroke: "#fff", "stroke-width": 2.5, opacity: 0 }, g2), x: ax(a.auc) }));
+      return { label, dots };
+    });
+    R.s4MidX = ax(0.5);
+    const beat = M.n_beat_naive === 0 ? "None" : `${M.n_beat_naive} of ${M.n_tickers}`;
+    R.s4AucCaption = html("p", "caption abs", auc, `Test ROC AUC runs from <b>${M.auc_min.toFixed(2)} to ${M.auc_max.toFixed(2)}</b> across ${M.models.reduce((n, m) => n + m.aucs.length, 0)} model–market pairs. ${beat} of the models picked by cross-validation beat the naive baseline.`);
+    R.s4AucCaption.style.top = "930px";
+  }
+
+  function buildBacktest() {
+    const B = D.backtest;
+    const g = $("#s5-chart");
+    const P = { l: 96, r: 960, t: 44, b: 560 };
+    const x0 = B.x[0], x1 = B.x[B.x.length - 1];
+    const all = B.costs.flatMap((c) => c.equity).concat(B.buy_and_hold);
+    const lo = Math.floor(Math.min(...all) * 10) / 10 - 0.1, hi = Math.ceil(Math.max(...all) * 10) / 10 + 0.1;
+    const sx = (x) => P.l + ((x - x0) / (x1 - x0)) * (P.r - P.l);
+    const sy = (v) => P.b - ((v - lo) / (hi - lo)) * (P.b - P.t);
+    R.s5 = { sx, sy, P, xs: B.x.map(sx) };
+    for (let v = Math.ceil(lo * 2) / 2; v <= hi; v += 0.5) {
+      svg("line", { x1: P.l, x2: P.r, y1: sy(v), y2: sy(v), stroke: v === 1 ? "#a1a1a8" : "#ebebee", "stroke-dasharray": v === 1 ? "3 5" : "" }, g);
+      svg("text", { x: P.l - 14, y: sy(v) + 7, "text-anchor": "end", "font-size": 19, fill: "#6e6e76" }, g).textContent = "$" + v.toFixed(2);
+    }
+    svg("text", { x: 0, y: 8, "font-size": 18, fill: "#6e6e76" }, g).textContent = `Growth of $1 on the ${B.name}, ${B.start} to ${B.end}`;
+    svg("line", { x1: P.l, x2: P.r, y1: P.b, y2: P.b, stroke: "#c4c4ca" }, g);
+    yearTicks(x0, x1, 1).forEach((yr) => {
+      svg("text", { x: sx(yr), y: P.b + 36, "text-anchor": "middle", "font-size": 19, fill: "#6e6e76" }, g).textContent = yr;
+    });
+    const clip = svg("clipPath", { id: "s5-clip" }, svg("defs", {}, g));
+    R.s5Clip = svg("rect", { x: 0, y: -40, width: 0, height: 700 }, clip);
+    const lines = svg("g", { "clip-path": "url(#s5-clip)" }, g);
+    svg("path", { d: path(R.s5.xs, B.buy_and_hold.map(sy)), fill: "none", stroke: "#4a4a50", "stroke-width": 3, "stroke-dasharray": "12 7", "stroke-linejoin": "round" }, lines);
+    R.s5Line = svg("path", { fill: "none", stroke: B.color, "stroke-width": 4, "stroke-linejoin": "round" }, lines);
+    R.s5LabelLine = svg("g", { opacity: 0 }, g);
+    R.s5StratLabel = svg("text", { x: P.r + 18, "font-size": 21, "font-weight": 600, fill: "#111113" }, R.s5LabelLine);
+    R.s5StratLabel.textContent = B.model;
+    R.s5BhLabel = svg("text", { x: P.r + 18, "font-size": 21, fill: "#4a4a50" }, R.s5LabelLine);
+    R.s5BhLabel.textContent = "Buy & hold";
+
+    const panel = $("#panel");
+    html("div", "label-sm", panel, "Cost per trade");
+    const track = html("div", "track", panel);
+    R.s5Fill = html("div", "fill", track);
+    R.s5Thumb = html("div", "thumb", track);
+    R.s5Cost = html("div", "", panel);
+    R.s5Cost.id = "cost-value";
+    const sh = html("div", "label-sm", panel, "Sharpe ratio");
+    sh.style.marginTop = "34px";
+    const r1 = html("div", "sharpe-row", panel, `<span><i style="background:${B.color}"></i>${B.model}</span>`);
+    R.s5Sharpe = html("span", "v", r1);
+    html("div", "sharpe-row", panel, `<span><i class="dash"></i>Buy &amp; hold</span><span class="v">${B.bh_sharpe.toFixed(2)}</span>`);
+    R.s5Badge = html("div", "", panel);
+    R.s5Badge.id = "badge";
+    $("#s5-caption").innerHTML = `Long on predicted rises, short on predicted falls. The small edge <b>disappears once trading costs are counted</b>.`;
+  }
+
+  /* Strategy equity and Sharpe at any cost, interpolated between the exported cost levels. */
+  function atCost(bps) {
+    const C = D.backtest.costs;
+    let i = 0;
+    while (i < C.length - 2 && C[i + 1].bps < bps) i++;
+    const a = C[i], b = C[i + 1];
+    const k = clamp((bps - a.bps) / (b.bps - a.bps));
+    return { equity: a.equity.map((v, j) => lerp(v, b.equity[j], k)), sharpe: lerp(a.sharpe, b.sharpe, k) };
+  }
+
+  function buildExplore() {
+    $("#s6-head").textContent = `${SHOTS.pages.length} pages, and every chart is interactive`;
+    const list = $("#pages");
+    R.pageItems = SHOTS.pages.map((p) => {
+      const item = html("div", "page-item", list, `<div class="n">${p.label}</div><div class="q">${p.question}</div>`);
+      return { item, bar: html("div", "bar", item), name: item.querySelector(".n") };
+    });
+    const vp = $("#viewport");
+    R.shotImgs = SHOTS.pages.map((p) => Object.assign(html("img", "", vp), { src: p.file }));
+    R.darkImg = Object.assign(html("img", "", vp), { src: SHOTS.dark.file });
+    R.phoneImg = Object.assign(html("img", "", $("#phone")), { src: SHOTS.phone.file });
+    R.url = $("#url");
+  }
+
+  function buildOutro() {
+    $("#s7-url").textContent = D.source_url;
+  }
+
+  // ---- render: set every element for time t -------------------------------------------------
+  function sceneOpacity(t, s) {
+    if (t < s.start || t > s.end) return 0;
+    const inK = s.start === 0 ? 1 : clamp((t - s.start) / FADE);
+    const outK = s.end === DURATION ? 1 : clamp((s.end - t) / FADE);
+    return Math.min(inK, outK);
+  }
+
+  function renderChrome(t) {
+    const first = SCENES[1], last = SCENES[5];
+    const o = Math.min(clamp((t - first.start) / 0.5), clamp((last.end - t) / 0.5));
+    $("#chrome").style.opacity = o;
+    $("#asof").style.opacity = Math.min(clamp((t - first.start) / 0.5), clamp((SCENES[4].end - t) / 0.5));
+    // The underline slides between chapters as scenes change.
+    let pos = 0;
+    SCENES.forEach((s) => {
+      if (s.chapter === undefined) return;
+      if (t >= s.start) pos = s.chapter === 0 ? 0 : lerp(s.chapter - 1, s.chapter, prog(t, s.start - 0.1, s.start + 0.5, easeInOut));
+    });
+    const i = Math.floor(pos), k = pos - i;
+    const a = R.chapterPos[i], b = R.chapterPos[Math.min(i + 1, R.chapterPos.length - 1)];
+    R.chapterBar.style.left = lerp(a.left, b.left, k) + "px";
+    R.chapterBar.style.width = lerp(a.width, b.width, k) + "px";
+    R.chapterEls.forEach((e, j) => (e.style.color = Math.round(pos) === j ? "#111113" : "#a1a1a8"));
+  }
+
+  function renderTitle(t) {
+    const lock = $("#s1 .lockup");
+    reveal(lock, t, 0.1, 0.8, 18);
+    spinCoin($("#s1 .coin"), prog(t, 0.2, 1.8) * 2);
+    R.words.forEach((w, i) => reveal(w, t, 0.9 + i * 0.16, 0.6, 34));
+    reveal($("#triad"), t, 2.7, 0.7, 20);
+    R.s1Clip.setAttribute("width", 1560 * prog(t, 0.3, 3.8, easeInOut));
+    const e = prog(t, 3.7, 4.2);
+    R.s1End.setAttribute("opacity", e);
+    R.s1Up.setAttribute("opacity", prog(t, 3.9, 4.3));
+    R.s1Down.setAttribute("opacity", prog(t, 4.05, 4.45));
+  }
+
+  function renderPrices(t) {
+    reveal($("#s2 .kicker"), t, 0.1, 0.5, 14);
+    reveal($("#s2-head"), t, 0.2, 0.6, 22);
+    const k = prog(t, 0.8, 5.0, easeInOut);
+    const { sx, x0, x1, P } = R.s2;
+    const x = P.l + k * (P.r - P.l);
+    R.s2Clip.setAttribute("width", x);
+    R.s2Cursor.setAttribute("transform", `translate(${x},0)`);
+    R.s2Cursor.setAttribute("opacity", k > 0 && k < 1 ? 1 : prog(t, 5.0, 5.4) > 0 ? 1 - prog(t, 5.0, 5.4) : 0);
+    R.s2Year.textContent = Math.floor(lerp(x0, x1, k));
+    // Static year ticks step aside while the moving year label passes over them.
+    const cursorOn = k > 0 && k < 1;
+    R.s2Ticks.forEach((tk) => tk.node.setAttribute("opacity", cursorOn ? clamp((Math.abs(tk.x - x) - 34) / 24) : 1));
+    R.s2Events.forEach((ev) => ev.node.setAttribute("opacity", clamp((x - ev.x) / 60)));
+    R.s2Labels.forEach((node, i) => node.setAttribute("opacity", prog(t, 5.0 + i * 0.12, 5.5 + i * 0.12)));
+    R.s2Count.textContent = fmtInt(D.n_bars * k);
+    reveal($("#s2-strip"), t, 0.9, 0.6, 12);
+  }
+
+  function renderFeatures(t) {
+    const F = D.features;
+    reveal($("#s3 .kicker"), t, 0.1, 0.5, 14);
+    reveal($("#s3-head"), t, 0.2, 0.6, 22);
+    reveal($("#card"), t, 0.6, 0.6, 20);
+    const { sx, sy, P, n } = R.s3;
+    const startIdx = 24, endIdx = n - 2; // the last labelled day
+    const idx = Math.round(lerp(startIdx, endIdx, prog(t, 0.9, 5.2, easeInOut)));
+    const cx = sx(idx);
+    R.s3Clip.setAttribute("width", cx + 1);
+    R.s3Future.setAttribute("x", cx);
+    R.s3Future.setAttribute("width", Math.max(0, P.r - cx));
+    const nextK = prog(t, 5.6, 6.2);
+    R.s3Future.setAttribute("opacity", 1 - nextK * 0.6);
+    R.s3FutureLabel.querySelectorAll("tspan").forEach((ts) => ts.setAttribute("x", (cx + P.r) / 2));
+    R.s3FutureLabel.setAttribute("opacity", clamp((P.r - cx - 90) / 80) * (1 - nextK));
+    R.s3Cursor.setAttribute("transform", `translate(${cx},0)`);
+    R.s3Dot.setAttribute("cx", cx);
+    R.s3Dot.setAttribute("cy", sy(F.close[idx]));
+    R.s3Pill.setAttribute("transform", `translate(${clamp(cx, P.l + 100, P.r - 100)},0)`);
+    R.s3PillText.textContent = `Day t · ${F.dates[idx]}`;
+    R.cardDate.textContent = F.dates[idx];
+    R.featureVals.forEach((node, j) => (node.textContent = fmtFeature(F.features[j].values[idx], F.features[j].format)));
+    R.s3Next.setAttribute("opacity", nextK);
+    reveal(R.target, t, 5.9, 0.5, 14);
+    reveal($("#s3-caption"), t, 6.4, 0.6, 14);
+  }
+
+  function renderModels(t) {
+    reveal($("#s4 .kicker"), t, 0.1, 0.5, 14);
+    reveal($("#s4-head"), t, 0.2, 0.6, 22);
+    const outA = prog(t, 5.4, 5.8, easeInOut);
+    const split = $("#s4-split");
+    split.style.opacity = 1 - outA;
+    reveal(R.s4Legend, t, 0.5, 0.5, 12);
+    R.s4Rows.forEach((row, i) => {
+      const a = 0.7 + i * 0.42;
+      row.label.style.opacity = prog(t, a, a + 0.4);
+      row.blocks.forEach((blk, j) => {
+        const w = blk.w * prog(t, a + j * 0.35, a + j * 0.35 + 0.55, easeInOut);
+        blk.rect.setAttribute("width", Math.max(0, w));
+      });
+    });
+    const lastA = 0.7 + (R.s4Rows.length - 1) * 0.42;
+    R.s4TestText.setAttribute("opacity", prog(t, lastA + 0.9, lastA + 1.3));
+    R.s4TrainText.setAttribute("opacity", prog(t, lastA + 0.6, lastA + 1.0));
+    R.s4Axis.setAttribute("opacity", prog(t, 0.7, 1.2));
+    reveal(R.s4SplitCaption, t, 3.6, 0.6, 14);
+
+    const auc = $("#s4-auc");
+    auc.style.opacity = prog(t, 5.7, 6.1);
+    R.s4Grid.setAttribute("opacity", prog(t, 5.7, 6.2));
+    R.s4Models.forEach((m, i) => {
+      const a = 6.0 + i * 0.2;
+      reveal(m.label, t, a, 0.45, 10);
+      // Dots travel out from the coin-flip line to their scores.
+      m.dots.forEach((d, j) => {
+        const k = prog(t, a + 0.1 + j * 0.05, a + 0.8 + j * 0.05, easeInOut);
+        d.c.setAttribute("cx", lerp(R.s4MidX, d.x, k));
+        d.c.setAttribute("opacity", clamp(k * 3));
+      });
+    });
+    reveal(R.s4AucCaption, t, 8.0, 0.6, 14);
+  }
+
+  function renderBacktest(t) {
+    const B = D.backtest;
+    reveal($("#s5 .kicker"), t, 0.1, 0.5, 14);
+    reveal($("#s5 .headline"), t, 0.2, 0.6, 22);
+    reveal($("#panel"), t, 0.8, 0.6, 20);
+    const { sy, P, xs } = R.s5;
+    R.s5Clip.setAttribute("width", P.l + (P.r - P.l + 30) * prog(t, 0.7, 3.2, easeInOut));
+    // Slider: default cost, down to zero, then up to the top of the grid.
+    const max = B.costs[B.costs.length - 1].bps;
+    let bps = B.default_cost;
+    if (t >= 3.6) bps = lerp(B.default_cost, 0, prog(t, 3.6, 4.3, easeInOut));
+    if (t >= 5.0) bps = lerp(0, max, prog(t, 5.0, 7.4, easeInOut));
+    const at = atCost(bps);
+    R.s5Line.setAttribute("d", path(xs, at.equity.map(sy)));
+    const frac = bps / max;
+    R.s5Fill.style.width = frac * 100 + "%";
+    R.s5Thumb.style.left = frac * 100 + "%";
+    R.s5Cost.textContent = `${Math.round(bps)} bp`;
+    R.s5Sharpe.textContent = at.sharpe.toFixed(2).replace("-", "−");
+    const beats = at.sharpe > B.bh_sharpe;
+    R.s5Badge.textContent = beats ? "Beats buy & hold" : "Trails buy & hold";
+    R.s5Badge.style.color = beats ? "#0b7a4b" : "#c0392f";
+    const items = spread([
+      { node: R.s5StratLabel, y: sy(at.equity[at.equity.length - 1]) + 7 },
+      { node: R.s5BhLabel, y: sy(B.buy_and_hold[B.buy_and_hold.length - 1]) + 7 },
+    ], 30, P.t, P.b);
+    items.forEach((it) => it.node.setAttribute("y", it.y));
+    R.s5LabelLine.setAttribute("opacity", prog(t, 3.0, 3.4));
+    reveal($("#s5-caption"), t, 7.2, 0.6, 14);
+  }
+
+  function renderExplore(t) {
+    reveal($("#s6 .kicker"), t, 0.1, 0.5, 14);
+    reveal($("#s6-head"), t, 0.2, 0.6, 22);
+    reveal($("#pages"), t, 0.4, 0.6, 20);
+    reveal($("#browser"), t, 0.5, 0.7, 40);
+    const slot = 1.5, first = 0.7, n = SHOTS.pages.length;
+    const active = Math.floor(clamp((t - first + 0.15) / slot, 0, n - 1e-6));
+    // Each page fades in over the one before (later images sit on top), scrolling as it shows.
+    R.shotImgs.forEach((img, i) => {
+      const a = first + i * slot;
+      const shown = i === 0 ? 1 : prog(t, a - 0.3, a, easeInOut);
+      const covered = i < n - 1 && t > a + slot;
+      img.style.opacity = covered ? 0 : shown;
+      const scroll = 360 * prog(t, a - 0.3, a + slot, easeInOut);
+      img.style.transform = `translateY(${-scroll}px)`;
+    });
+    // The last page stays up; then it wipes to the dark theme, and a phone slides in.
+    const darkK = prog(t, 10.0, 10.7, easeInOut);
+    R.darkImg.style.transform = R.shotImgs[n - 1].style.transform;
+    R.darkImg.style.clipPath = `inset(0 ${(1 - darkK) * 100}% 0 0)`;
+    R.darkImg.style.opacity = darkK > 0 ? 1 : 0;
+    const phoneK = prog(t, 10.2, 11.0);
+    $("#phone").style.top = lerp(1090, 400, phoneK) + "px";
+    R.phoneImg.style.transform = `translateY(${-120 * prog(t, 10.6, 11.8, easeInOut)}px)`;
+    reveal($("#extras"), t, 10.3, 0.6, 14);
+    R.url.textContent = "stockml  " + decodeURIComponent(SHOTS.pages[active].path);
+    R.pageItems.forEach((p, i) => {
+      const on = i === active && t < 10.0;
+      p.name.style.color = on ? "#111113" : "#a1a1a8";
+      p.bar.style.opacity = on ? 1 : 0;
+    });
+  }
+
+  function renderOutro(t) {
+    reveal($("#verdict"), t, 0.3, 0.8, 30);
+    const lock = $("#s7 .lockup");
+    reveal(lock, t, 1.8, 0.7, 20);
+    spinCoin($("#s7 .coin"), prog(t, 1.8, 3.0) * 1);
+    reveal($("#s7-url"), t, 2.3, 0.6, 14);
+    reveal($("#s7 .stack"), t, 2.6, 0.6, 14);
+  }
+
+  const RENDERERS = { s1: renderTitle, s2: renderPrices, s3: renderFeatures, s4: renderModels, s5: renderBacktest, s6: renderExplore, s7: renderOutro };
+
+  function renderAt(t) {
+    t = clamp(t, 0, DURATION);
+    renderChrome(t);
+    SCENES.forEach((s) => {
+      const node = document.getElementById(s.id);
+      const o = sceneOpacity(t, s);
+      node.style.opacity = o;
+      node.style.visibility = o > 0 ? "visible" : "hidden";
+      if (o > 0) RENDERERS[s.id](t - s.start);
+    });
+  }
+
+  // ---- start-up ---------------------------------------------------------------------------
+  async function ready() {
+    await Promise.all([
+      document.fonts.load("500 70px Newsreader"),
+      document.fonts.load("600 36px Newsreader"),
+      document.fonts.load("400 24px 'Instrument Sans'"),
+      document.fonts.load("600 24px 'Instrument Sans'"),
+      document.fonts.load("400 16px 'JetBrains Mono'"),
+    ]).catch(() => {});
+    await document.fonts.ready;
+    buildChrome();
+    buildTitle();
+    buildPrices();
+    buildFeatures();
+    buildModels();
+    buildBacktest();
+    buildExplore();
+    buildOutro();
+    await Promise.all([...document.images].map((img) => img.decode().catch(() => {})));
+  }
+
+  const params = new URLSearchParams(location.search);
+  window.STOCKML = { DURATION, FPS, renderAt, ready: ready() };
+  if (params.has("render")) return;
+
+  // Preview: scale the stage to the window and play (or hold ?t=...).
+  document.body.classList.add("preview");
+  const stage = $("#stage");
+  const fit = () => {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    stage.style.transform = `translate(${(innerWidth - 1920 * s) / 2}px, ${(innerHeight - 1080 * s) / 2}px) scale(${s})`;
+  };
+  addEventListener("resize", fit);
+  fit();
+  window.STOCKML.ready.then(() => {
+    let t = Number(params.get("t") || 0), playing = !params.has("t"), last = performance.now();
+    addEventListener("keydown", (e) => {
+      if (e.key === " ") playing = !playing;
+      if (e.key === "ArrowRight") t += e.shiftKey ? 5 : 1 / FPS;
+      if (e.key === "ArrowLeft") t -= e.shiftKey ? 5 : 1 / FPS;
+      t = clamp(t, 0, DURATION);
+      renderAt(t);
+    });
+    const loop = (now) => {
+      if (playing) t = (t + (now - last) / 1000) % DURATION;
+      last = now;
+      renderAt(t);
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  });
+})();
+</script>
+</body>
+</html>

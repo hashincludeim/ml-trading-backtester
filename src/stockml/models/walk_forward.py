@@ -34,6 +34,17 @@ class WalkForwardResult:
     refit_dates: tuple[pd.Timestamp, ...]
 
 
+def block_starts(n_rows: int, test_start: int, retrain_every: int) -> range:
+    """Row positions where walk-forward refits: the first row of each prediction block.
+
+    Args:
+        n_rows: Rows in the whole history.
+        test_start: Position of the first row to predict.
+        retrain_every: Rows predicted by each fitted model before it is refitted.
+    """
+    return range(test_start, n_rows, retrain_every)
+
+
 def walk_forward_predict(
     pipeline: Pipeline,
     X: pd.DataFrame,
@@ -74,7 +85,7 @@ def walk_forward_predict(
     predictions: list[pd.Series] = []
     scores: list[pd.Series] = []
     refit_dates: list[pd.Timestamp] = []
-    for start in range(test_start, len(X), retrain_every):
+    for start in block_starts(len(X), test_start, retrain_every):
         block = X.iloc[start : start + retrain_every]
         model = clone(pipeline).fit(X.iloc[:start], y.iloc[:start])
         predictions.append(pd.Series(model.predict(block).astype(int), index=block.index))

@@ -35,6 +35,8 @@ stockml/
 ├── Dockerfile, .dockerignore  # image for Google Cloud Run (serves only; data baked in, no training)
 ├── deploy/                     # start.sh (gunicorn entrypoint), gcp-setup.sh (one-time Cloud Run + keyless GitHub auth)
 ├── .github/workflows/deploy.yml  # checks; on main + weekday nights: fetch, train, push image to GHCR, deploy to Cloud Run
+├── video/                      # explainer video: explainer.html (deterministic renderAt(t) animation),
+│                               #   export_data.py, capture_pages.py, render_video.py; build/ + out/ git-ignored
 ├── legacy/
 │   └── machine_learning_project.py   # original notebook export (read-only reference)
 ├── src/stockml/                # framework-agnostic core library
@@ -188,6 +190,7 @@ After fetching new data, re-run `train_models` so models and backtests include t
 4. **Models**: comparison table vs naive baseline, CV mean ± std and per-fold stability, ROC curves, rolling test accuracy, score separation, confusion matrix, permutation importance.
 5. **Backtest**: equity curves vs buy-and-hold, risk table, cost sensitivity, risk vs return, drawdowns, rolling Sharpe, return histogram, monthly returns, transaction-cost slider.
 6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold, rebased prices, risk vs return per ticker, cross-ticker return correlation.
+7. **About** (masthead link, not in the six-page nav): what the site does and how, split/CV/walk-forward timeline (`split_timeline` + `split_timeline_chart`), page guide, ground rules, limits, and the explainer video with a transcript (`_video_transcript.html`; update it when the video is re-rendered).
 
 Light is the default theme (it does not follow the OS); a header toggle switches to dark and stores the choice in `localStorage`.
 
