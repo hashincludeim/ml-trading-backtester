@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The Up or Down mark; the colours follow the browser's light or dark theme. -->
+  <style>
+    .up { fill: #0b7a4b; } .down { fill: none; stroke: #c0392f; }
+    @media (prefers-color-scheme: dark) { .up { fill: #3cc38f; } .down { stroke: #ef7a78; } }
+  </style>
+  <path class="up" d="M16 1.5 30.5 14.4h-29z"/>
+  <path class="down" d="M4.6 18.6h22.8L16 29.2z" stroke-width="2.8" stroke-linejoin="round"/>
+</svg>

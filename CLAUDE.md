@@ -4,7 +4,7 @@ This file tells Claude (and human contributors) how this project is organised, w
 
 ## Project overview
 
-**StockML** predicts whether a stock's closing price will rise the next trading day, backtests a long/short strategy built on those predictions, and presents the results in an interactive Django web dashboard.
+**Up or Down** (Python package `stockml`) predicts whether a stock's closing price will rise the next trading day, backtests a long/short strategy built on those predictions, and presents the results in an interactive Django web dashboard.
 
 The project started as a single Colab notebook export (`legacy/machine_learning_project.py`) that analyses Barclays (`BARC.L`) from 2000–2022. It is now a portfolio piece that demonstrates three things to employers:
 
@@ -196,7 +196,8 @@ Light is the default theme (it does not follow the OS); a header toggle switches
 
 ### Visual design
 - Editorial research-note look: **Newsreader** (serif) for page titles, section heads and verdict headlines; **Instrument Sans** for everything else, including chart text (`FONT_FAMILY` in `theme.py`); JetBrains Mono for code only.
-- Chrome stays black, white and grey so the data carries the colour. No card boxes or shadows: figures sit on the page under a hairline, sections open with an ink rule, key figures form a ruled strip.
+- Brand: the name is **Up or Down** ("or" in grey italic serif). The logo is a split diamond: a filled up-triangle in `--pos` over an outlined down-triangle in `--neg`, with a gap for today's close (`#mark` symbol in `base.html`, `static/dashboard/favicon.svg`, and the three lockups in `video/explainer.html`). Keep these in sync. The package, Cloud Run service, `stockml-theme` storage key and video file names stay `stockml`.
+- Apart from the logo, chrome stays black, white and grey so the data carries the colour. No card boxes or shadows: figures sit on the page under a hairline, sections open with an ink rule, key figures form a ruled strip.
 - Each page's headline finding is a `.callout` with a label (e.g. "Verdict"), a serif `.callout-head` and a `.callout-body`. Captions under charts carry a small label: "Takeaway" (data-driven, via `_insight.html`), "How to read" or "Method".
 - The page colour equals `theme.SURFACE` in both themes (`--bg` in `dashboard.css` matches `DARK_COLOR_MAP[SURFACE]`), so charts blend into the page. Keep the two in sync.
 

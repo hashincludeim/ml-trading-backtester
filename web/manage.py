@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django command-line utility for the StockML dashboard."""
+"""Django command-line utility for the Up or Down dashboard."""
 
 import os
 import sys

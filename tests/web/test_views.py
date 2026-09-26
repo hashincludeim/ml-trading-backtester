@@ -202,6 +202,16 @@ def test_every_page_links_to_about(client: Client) -> None:
     assert b'href="/about/"' in resp.content.split(b"site-footer")[1]
 
 
+def test_pages_carry_the_up_or_down_brand(client: Client) -> None:
+    with patch.object(services, "overview_context", return_value=_ctx("price", stats=[])):
+        resp = client.get(reverse("dashboard:overview"))
+    assert b"<title>Overview \xc2\xb7 Up or Down</title>" in resp.content
+    assert resp.content.count(b"<span>Up <em>or</em> Down</span></a>") == 2  # masthead + footer
+    assert b'<symbol id="mark"' in resp.content and b'class="mark-up"' in resp.content
+    assert b"dashboard/favicon.svg" in resp.content
+    assert client.get(static("dashboard/favicon.svg")).status_code == 200
+
+
 def test_explainer_video_is_served_in_byte_ranges(client: Client) -> None:
     # Safari and iOS only play <video> from servers that answer Range requests; WhiteNoise does.
     resp = client.get(static("dashboard/video/stockml-explainer.mp4"), HTTP_RANGE="bytes=0-99")

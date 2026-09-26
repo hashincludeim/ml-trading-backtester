@@ -1,7 +1,8 @@
-# StockML
+# Up or Down
 
 Predict whether a stock will close higher tomorrow, backtest a long/short strategy on those
-predictions, and explore everything in an interactive Django + Plotly dashboard.
+predictions, and explore everything in an interactive Django + Plotly dashboard. The core
+Python package is `stockml`.
 
 It began as a single Colab notebook analysing Barclays (`BARC.L`) from 2000 to 2022
 ([`legacy/machine_learning_project.py`](legacy/machine_learning_project.py)). This repo rebuilds it

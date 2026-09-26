@@ -1,8 +1,8 @@
 {% extends "dashboard/base.html" %}
 {% load static dashboard_tags %}
 {% block title %}About{% endblock %}
-{% block heading %}How StockML works{% endblock %}
-{% block intro %}StockML asks one question of {% if universe %}{{ n_bars|floatformat:"0g" }} daily prices from {{ universe|length }} markets{% else %}decades of daily prices{% endif %}: <em>will tomorrow's close be higher than today's?</em> It trains {{ models|length }} machine-learning models to answer, trades on their answers in a backtest, and shows every step as an interactive chart. This page explains what it does, how, and what you can do here.{% endblock %}
+{% block heading %}How Up or Down works{% endblock %}
+{% block intro %}Up or Down asks one question of {% if universe %}{{ n_bars|floatformat:"0g" }} daily prices from {{ universe|length }} markets{% else %}decades of daily prices{% endif %}: <em>will tomorrow's close be higher than today's?</em> It trains {{ models|length }} machine-learning models to answer, trades on their answers in a backtest, and shows every step as an interactive chart. This page explains what it does, how, and what you can do here.{% endblock %}
 {% block content %}
   <figure class="video-figure">
     <video class="video" controls playsinline preload="metadata" poster="{% static 'dashboard/video/stockml-explainer-poster.jpg' %}" aria-describedby="video-caption">
