@@ -75,16 +75,22 @@ jobs:
         env:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           GCP_REGION: ${{ vars.GCP_REGION }}
+          SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
         # Scales to zero when idle (free tier), at most 2 instances so costs stay capped. One
         # gunicorn process with 4 threads keeps a single in-memory chart cache per instance.
+        # SITE_DOMAIN (optional repo variable) is the custom domain mapped to the service, which
+        # Django must accept as a host. "^;^" makes ";" the separator so values can hold commas.
         run: |
           gcloud run deploy stockml \
             --project "$GCP_PROJECT_ID" --region "$GCP_REGION" \
             --image "$IMAGE" --port 8000 \
             --cpu 1 --memory 1Gi --cpu-boost \
             --min-instances 0 --max-instances 2 --concurrency 4 \
-            --set-env-vars WEB_WORKERS=1,WEB_THREADS=4 \
+            --set-env-vars "^;^WEB_WORKERS=1;WEB_THREADS=4;DJANGO_ALLOWED_HOSTS=.run.app,$SITE_DOMAIN" \
             --service-account "stockml-runtime@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
             --allow-unauthenticated --quiet
+          if [ -n "$SITE_DOMAIN" ]; then
+            echo "Custom domain: https://$SITE_DOMAIN" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "Live at: $(gcloud run services describe stockml --project "$GCP_PROJECT_ID" \
             --region "$GCP_REGION" --format='value(status.url)')" >> "$GITHUB_STEP_SUMMARY"
