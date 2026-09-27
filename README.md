@@ -1,15 +1,30 @@
 # Up or Down
 
-Predict whether a stock will close higher tomorrow, backtest a long/short strategy on those
-predictions, and explore everything in an interactive Django + Plotly dashboard. The core
+Will tomorrow's close be higher than today's? Up or Down trains seven machine-learning models to
+answer that for the S&P 500 and four large US tech stocks. It backtests a trading strategy built
+on their answers and shows every step in an interactive Django + Plotly dashboard. The core
 Python package is `stockml`.
 
-It began as a single Colab notebook analysing Barclays (`BARC.L`) from 2000 to 2022
-([`legacy/machine_learning_project.py`](legacy/machine_learning_project.py)). This repo rebuilds it
-as a tested, typed library with a thin web layer, and fixes the leakage and evaluation problems in
-the original. The table at the bottom lists each one.
+![The Overview page for the S&P 500: headline statistics above a candlestick chart with market events marked](docs/screenshots/overview.png)
 
-## Universe and data
+The honest headline: **next-day direction is close to a coin flip**, and the site says so on
+every page. A second target, **whether tomorrow will be a big move**, turns out to be genuinely
+predictable, and the models beat a no-model benchmark there. The project's goal is a sound,
+leak-free method and clear communication, not a money-printing model.
+
+## What it does
+
+1. **Predicts.** Each trading day becomes 20 technical features computed from that day's close
+   and earlier. Seven classifiers learn two yes/no targets from them: next-day direction and
+   next-day volatility.
+2. **Backtests.** The direction models trade long/short (or long/flat) on their own predictions,
+   net of transaction costs, against buy & hold.
+3. **Explains.** Six dashboard pages and an About page with a one-minute video show the data,
+   the features, the models and the backtest as interactive charts. Each chart has a caption,
+   computed from the data, that states the takeaway, including when a model does no better than
+   a naive guess.
+
+## Data
 
 | Ticker | Name | Quoted in | History |
 |---|---|---|---|
@@ -19,53 +34,209 @@ the original. The table at the bottom lists each one.
 | `GOOGL` | Alphabet (Google), class A | USD | Aug 2004 (IPO) → today |
 | `ORCL` | Oracle | USD | 2000 → today |
 
-Prices are daily OHLCV from Yahoo Finance, adjusted for splits and dividends. Downloads run up to
-the **system date** (`DataConfig.end` defaults to tomorrow, because yfinance treats `end` as
-exclusive). The universe, start date, display names and units are all set in
-`src/stockml/config.py`.
+Prices are daily OHLCV from Yahoo Finance, adjusted for splits and dividends: about 32,000 daily
+bars in total, cached as Parquet. Downloads run up to the **system date** (`DataConfig.end`
+defaults to tomorrow, because yfinance treats `end` as exclusive), and the deployed site refreshes
+every weeknight. Bad ticks are flagged by a volatility-scaled z-score that also requires an
+immediate reversal, so genuine crashes such as 2008 and 2020 are kept. The universe, dates,
+display names and units are all set in `src/stockml/config.py`.
 
-## What's inside
+## Prediction targets
 
-| Layer | Where | Notes |
+| Target | Label at day *t* is 1 when… | Naive benchmarks it must beat |
 |---|---|---|
-| Core library | `src/stockml/` | No Django imports. Small, pure, typed functions; `mypy --strict` clean. |
-| Data | `data/loader.py`, `data/cleaning.py` | yfinance → Parquet cache; handles MultiIndex columns and `auto_adjust` explicitly. Bad ticks are flagged with a volatility-scaled z-score that needs an immediate reversal, so genuine crashes (2008, 2020) are kept. |
-| Features | `features/` | SMA/EMA ratios, RSI (Wilder), MACD, Bollinger position, volatility, EMA trend, volume ratio. Every feature at *t* uses data up to the close of *t* only. Tests check this by changing future prices and asserting earlier features stay the same. |
-| Models | `models/registry.py` | 7 classifiers, each built as `StandardScaler → [PCA] → estimator` inside one sklearn `Pipeline`. Small grids are tuned with `TimeSeriesSplit`. |
-| Evaluation | `evaluation/` | Accuracy/precision/recall/F1/ROC AUC with naive (always-up / majority) baselines. Vectorised backtest with long/short or long/flat, costs in bp, and annualised Sharpe/Sortino/Calmar. |
-| Analysis | `analysis.py` | Descriptive statistics behind the explanatory charts: drawdown episodes, calendar returns, autocorrelation, feature-bucket up-rates, indicator signal tables. |
-| Charts | `viz/charts.py` | Functions that return `go.Figure`, all using one theme (`viz/theme.py`). Each model keeps the same colour on every chart, and the palette is colour-blind-validated. Dark mode comes from a single light→dark colour map in the theme, which the browser applies when toggling. |
-| Experiment | `experiment.py` | `run_experiment()` builds features, makes the chronological split, and trains and evaluates every registered model in one loop. |
-| Web | `web/dashboard/` | Views only parse input, call `services.py` and render. Figures go to templates as JSON. Results are cached in Django's cache. Training never runs inside a request. |
+| **Next-day direction** (`price_rise`) | close *t+1* > close *t* | Always predicting the more common class in the test period |
+| **Next-day volatility** (`big_move`) | \|log return *t → t+1*\| is larger than the median absolute daily return over the past 252 days (a "typical day" of the past year, measured up to *t*) | The majority class, plus a *persistence rule* with no model: predict a big move when the last 5 days were rougher than a typical day |
 
-### Dashboard pages
+The persistence rule is there because volatility clusters. Calm days tend to follow calm days and
+rough days follow rough days, so a volatility model is only interesting if it beats that simple
+rule. The final day has no next-day label and is dropped.
 
-Each chart has a one-line "how to read this" subtitle, and key charts carry a caption computed
-from the data (for example "0 of 17 features clear the noise band"). Pages open in the light
-theme; a header toggle switches to dark and remembers the choice.
+## Features
 
-1. **Overview**: candlesticks with 50/200-day trend lines and annotated market events (dot-com peak,
-   Lehman, COVID, Fed hikes, ChatGPT launch), volume, drawdown from the all-time high, rolling volatility,
-   calendar-year returns, and a year × month returns heatmap.
-2. **Indicators**: SMA/EMA/Bollinger overlays you can toggle, EMA crossover markers, RSI with
-   overbought/oversold zones, MACD, and a "what happened the day after each signal?" dot plot
-   with 95% intervals.
-3. **Exploration**: return autocorrelation and fat tails against a normal curve, each feature's
-   rank correlation with the next-day return against a noise band, next-day up-rate by feature
-   decile, feature distributions by outcome, target balance, and feature redundancy.
-4. **Models**: comparison table against the naive baseline, CV mean ± std and fold-by-fold
-   stability, ROC curves, rolling test-set accuracy, how well each model's scores separate up
-   days from down days, confusion matrix, and permutation importance.
-5. **Backtest**: equity curves against buy & hold, a risk table, how Sharpe decays as costs rise,
-   risk vs return, drawdowns, rolling Sharpe, daily-return histogram, monthly returns, and a live
+Every feature at row *t* uses only data available at the close of day *t*. Tests enforce this
+by changing future prices and asserting that no earlier feature moves. Features that depend on
+price level are expressed relative to the close, so they are roughly stationary and comparable
+across decades and across tickers.
+
+| Family | Features | What it captures |
+|---|---|---|
+| Today's bar | `hl_range` (high − low) / close, `oc_change` (close − open) / open, `return_1d` (log return) | How wide and in which direction today moved |
+| Trend | `sma_{3,10,30}_ratio`, `ema_{3,10,30}_ratio`: close / moving average − 1 | How stretched the price is above or below its recent average |
+| Momentum | `rsi_14` (Wilder smoothing), `macd_pct`, `macd_hist_pct` (MACD 12/26/9 as a share of the close), `ema_bullish` (1 when the 10-day EMA is above the 30-day), `ema_diff_pct` | Speed and direction of recent moves, and trend state |
+| Bands | `bb_position`: where the close sits in its 20-day, 2σ Bollinger band | Short-term overbought or oversold |
+| Volatility | `volatility_{5,21,63}`: realised volatility over about a week, a month and a quarter; `vol_ratio_5_63` | How rough the market is, and whether this week is rougher than the quarter around it |
+| Participation | `volume_ratio`: volume / 20-day average volume | Unusual trading activity |
+
+All windows live in `FeatureConfig`, and features are always selected by name, never by column
+position.
+
+### How the features were chosen
+
+The feature set is chosen **up front, from standard technical-analysis ideas**. It covers the
+five things a trader might read from a chart: the day's bar, trend, momentum, band position and
+volatility, plus volume. Each family uses short, medium and long windows. The 21- and 63-day
+volatility measures and their ratio to the 5-day measure were added for the volatility target:
+volatility clusters, so recent roughness relative to the longer run is the natural predictor.
+
+There is **no automatic feature-selection step** (RFE, SelectKBest and similar). The reasons:
+
+- **The direction signal is too weak to select on.** Over the full history, between 0 (Alphabet)
+  and 12 (S&P 500) of the 20 features have a rank correlation with the next day's return outside
+  the 95% noise band. The strongest, |ρ| = 0.066, explains under 0.5% of the variance. A
+  selection step fitted to correlations that small mostly learns noise, and dropping features
+  also hides the honest "nothing works" result.
+- **Redundancy is handled by the models instead.** Several features are near-twins (for example
+  `ema_diff_pct` and `macd_pct`, and each SMA/EMA ratio pair, all with ρ above 0.95). The linear
+  models are regularised with a tuned `C`, the tree ensembles are indifferent to duplicates, and
+  the one distance-based model (KNN) first compresses the features with PCA to 5 components.
+- **Identical inputs keep comparisons fair.** Every model, ticker and target sees the same 20
+  columns, so differences in results come from the models, not the inputs.
+
+Features are instead **checked after the fact**, never against the test set:
+
+- The **Exploration** page ranks each feature's correlation with the next day's return against
+  the noise band. It shows the next-day up-rate by feature decile and a redundancy heatmap.
+- The **Models** page shows **permutation importance** measured on the last cross-validation
+  fold of the training period. For direction, the most important features are the day's own move
+  (`return_1d`, `oc_change`), and even they are tiny: shuffling one costs at most about 0.03 ROC AUC.
+  For volatility, the medium-term volatility, trend state and band features (`volatility_21`,
+  `ema_bullish`, `bb_position`) come first.
+
+![Exploration page: each feature's rank correlation with the next-day return against a shaded noise band, and next-day up-rate by feature decile](docs/screenshots/feature-signal.png)
+
+## Models
+
+Every model is an sklearn `Pipeline` of `StandardScaler → [PCA] → estimator`. All preprocessing
+is therefore fitted inside each training fold and never sees validation or test data. The
+registry (`src/stockml/models/registry.py`) builds the same pipelines for both targets.
+
+| Model | Settings | Tuned by time-series CV | Why it's in the line-up |
+|---|---|---|---|
+| Logistic Regression | L2 penalty | `C` ∈ {0.01, 0.1, 1} | Linear, interpretable baseline with probability outputs |
+| Linear SVC | `C = 0.1` | — | Linear max-margin alternative to logistic regression |
+| SVM (RBF) | RBF kernel, `gamma="scale"` | `C` ∈ {0.3, 1, 3} | Smooth non-linear boundaries |
+| Random Forest | 300 trees, `min_samples_leaf=20` | `max_depth` ∈ {3, 6} | Non-linear interactions; shallow trees and large leaves resist fitting noise |
+| Extra Trees | 300 trees, depth 6, `min_samples_leaf=20` | — | More randomised splits, so lower variance than a random forest |
+| Bagging (KNN) | 20 × 25-nearest-neighbours on half-samples, after PCA to 5 components | — | Local, similarity-based view: "what happened after days like this?" |
+| Gradient Boosting | 200 trees, learning rate 0.03, subsample 0.7 | `max_depth` ∈ {2, 3, 5} | Strong tabular learner, kept shallow and slow to avoid overfitting |
+
+Grids are deliberately small. With signal this weak, a big search mostly finds settings that got
+lucky on one fold. Every model uses a fixed `random_state` (101), so runs are reproducible.
+
+## Training and evaluation
+
+For each ticker and target, `run_experiment()` (`src/stockml/experiment.py`) does the following:
+
+1. **Builds `(X, y)`.** It computes features and the label, and drops indicator warm-up rows and
+   the final unlabelled day.
+2. **Splits chronologically.** The first 80% of days are the training period and the last 20%
+   are the test period, roughly mid-2021 (2022 for Alphabet) to the latest close. There is no shuffling anywhere.
+3. **Tunes and cross-validates** on the training period only. `GridSearchCV` uses a 5-fold
+   expanding-window `TimeSeriesSplit` scored by ROC AUC. The chosen configuration's CV accuracy,
+   ROC AUC and F1 are recorded per fold, then it is refitted on the whole training period.
+4. **Tests once.** It scores the fitted pipeline on the unseen test period: accuracy, precision,
+   recall, F1, ROC AUC and the confusion matrix, next to the naive benchmarks. This same fitted
+   pipeline is also the one that is backtested and plotted.
+5. **Walks forward.** A second test period evaluation refits each model every 63 trading days
+   (about a quarter) on all earlier data and predicts only the next block. This is closer to how
+   a model would really be used.
+6. **Measures permutation importance** on the last CV fold of the training period, never on the
+   test set.
+7. **Picks a model per ticker by training-period CV ROC AUC**, never by test results. Test
+   numbers therefore stay genuinely out of sample.
+
+![Walk-forward check for the S&P 500 volatility target: test ROC AUC with 95% intervals for each model, trained once and refitted every quarter](docs/screenshots/walk-forward.png)
+
+## Results
+
+These numbers come from the latest run, with test periods from mid-2021 to September 2026. They
+shift slightly each time the data is refreshed and the models retrained.
+
+| | Next-day direction | Next-day volatility |
+|---|---|---|
+| Test accuracy, 35 model × ticker pairs | 48.6% – 53.9% | 52.2% – 62.1% |
+| Test ROC AUC, 35 pairs | 0.48 – 0.53 | 0.54 – 0.66 |
+| CV-picked model beats the majority-class guess | 0 of 5 tickers | 5 of 5 tickers |
+| CV-picked model beats the persistence rule (ROC AUC) | n/a | 4 of 5 (Amazon ties: 0.575 vs 0.576) |
+| Walk-forward ROC AUC of the CV-picked models | 0.48 – 0.50 | 0.57 – 0.66 |
+
+- **Direction is a coin flip.** Models score at or below always guessing the more common
+  direction, and walk-forward refitting does not change that. The S&P 500 shows slight
+  short-term mean reversion (a gain today nudges tomorrow down), but it is far too small to
+  trade.
+- **Volatility is predictable.** On the S&P 500 all seven models beat the persistence rule
+  (best ROC AUC 0.66 against 0.61), and the gap is larger than its 95% interval. The edge holds
+  under walk-forward refitting. This is expected, because volatility clusters, and it is the one
+  place where the models add something real.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/models-direction.png" alt="Models page, direction target: 2 of 7 models beat the naive guess, best ROC AUC 0.500"></td>
+    <td width="50%"><img src="docs/screenshots/models-volatility.png" alt="Models page, volatility target: 7 of 7 models beat the naive guess and the persistence rule"></td>
+  </tr>
+  <tr>
+    <td>Direction: ROC AUC 0.50, no better than chance.</td>
+    <td>Volatility: every model beats both benchmarks.</td>
+  </tr>
+</table>
+
+## Backtest
+
+The direction models' predictions become positions. A predicted rise at the close of *t* goes
+long, and a predicted fall goes short (`long_short`) or to cash (`long_flat`). The position
+earns the log return from *t* to *t+1*. A cost in basis points (5 by default) is charged on every
+unit of position change, including the first entry. Sharpe and Sortino ratios are annualised with
+√252, max drawdown is taken on the equity curve, and Calmar is annualised return divided by max
+drawdown.
+
+On the S&P 500 at 5 bp, none of the seven strategies beats buy & hold's Sharpe ratio of 0.69.
+The best, chosen with hindsight, reaches 0.68. The cost-sensitivity chart and a live cost slider
+show how quickly turnover wipes out any small edge.
+
+![Backtest page in dark mode: verdict that 0 of 7 strategies beat buy and hold, with growth-of-$1 curves for each model](docs/screenshots/backtest-dark.png)
+
+## Dashboard pages
+
+Each chart has a one-line "how to read this" subtitle, and key charts carry a takeaway computed
+from the data. Pages open in the light theme; a header toggle switches to dark and remembers the
+choice. Phones get a dedicated layout.
+
+1. **Overview**: candlesticks with 50/200-day averages and market events, volume, drawdown from
+   the all-time high, rolling volatility, calendar-year returns and a year × month heatmap.
+2. **Indicators**: SMA/EMA/Bollinger overlays, EMA crossovers, RSI with overbought/oversold
+   zones, MACD, and the next-day outcome after each signal with 95% intervals.
+3. **Exploration**: return autocorrelation, fat tails against a normal curve, feature
+   correlation with the next-day return against a noise band, up-rate by feature decile,
+   distributions by outcome, target balance and feature redundancy.
+4. **Models**: switch between the direction and volatility targets. Shows the comparison table
+   against the benchmarks, CV mean ± std and per-fold stability, ROC curves, rolling test
+   accuracy, the walk-forward check, score separation, the confusion matrix and permutation
+   importance.
+5. **Backtest**: equity curves against buy & hold, a risk table, cost sensitivity, risk against
+   return, drawdowns, rolling Sharpe, a daily-return histogram, monthly returns and a
    transaction-cost slider.
-6. **Multi-ticker**: ticker × model heatmap, CV-selected model vs buy & hold, rebased prices,
-   buy & hold risk vs return per stock, and cross-ticker return correlation.
+6. **Multi-ticker**: ticker × model heatmap, each ticker's CV-picked model against buy & hold,
+   rebased prices, risk against return, and cross-ticker return correlation.
 
-An **About** page (linked top right) explains what the site does and how, page by page, with a
-one-minute explainer video, a timeline of how each run splits its history for cross-validation,
-testing and walk-forward refits, the ground rules that keep results honest, and the limits. Its
-headline numbers are computed live from the latest training runs.
+The **About** page explains the method with a timeline of the CV, test and walk-forward periods.
+It lists the ground rules and the limits, and embeds a one-minute explainer video with a
+transcript.
+
+## Architecture
+
+All data, feature, model, backtest, analysis and chart code lives in `src/stockml/`, a typed
+library with no Django imports (`mypy --strict` clean). Django is a thin presentation layer:
+views parse the request, call `web/dashboard/services.py` and render. Figures reach the templates
+as Plotly JSON and are cached per ticker, training run and data version. Downloading and training
+never happen inside a web request; they run as management commands, nightly in CI.
+
+```
+yfinance → data.loader (Parquet cache) → data.cleaning → features.pipeline → (X, y)
+        → models.training (TimeSeriesSplit CV, fit) → predictions
+        → evaluation.backtest + evaluation.metrics + analysis → results
+        → viz.charts (Plotly figures) → dashboard.services → templates
+```
 
 ## Quick start
 
@@ -196,62 +367,15 @@ docker build -t stockml . && docker run --rm -p 8000:8000 stockml
 - **Port 8000 is taken.** Run `python web/manage.py runserver 8001`. The preview config in
   `.claude/launch.json` picks a free port automatically.
 
-## Results, honestly
 
-Next-day direction for the S&P 500 and large US tech stocks is close to a coin flip. On the latest
-run (test period mid-2021 to September 2026):
-
-- Test accuracy across the 35 model/ticker pairs falls between roughly 49% and 54%, and ROC AUC
-  between 0.48 and 0.53.
-- None of the models chosen by training-period CV beats the naive baseline on accuracy. The
-  baseline always predicts whichever direction was more common in the test period.
-- Some features are statistically detectable but economically tiny. For the S&P 500, 12 of 17
-  features clear the 95% noise band (short-term mean reversion in the index), but no feature on
-  any ticker has |ρ| above 0.07 with the next day's return. That explains under 0.5% of its
-  variance, which is too little to survive trading costs.
-
-The dashboard says all this on the page, not just in the README:
-
-- It compares every model with that naive baseline and with buy & hold, and flags when a model
-  doesn't beat them.
-- It picks each ticker's model by training-period CV, not by hindsight.
-- It shows how quickly trading costs wipe out any small edge.
-
-The point of the project is a sound methodology and clear communication, not a money-printing
-model. Numbers change slightly each time you refresh the data and retrain.
-
-## Legacy issues fixed
-
-| # | Issue in the notebook | Fix here |
-|---|---|---|
-| 1 | "IQR" used `Q2-Q1` / `Q4-Q3`; replacement hard-coded to `2022-06-14` | `detect_outliers()` uses a rolling z-score (or standard IQR) on log returns and requires a reversal. `replace_outliers()` is generic. |
-| 2 | Features picked with `iloc[:, 4:-5]` | Named `FeatureConfig.feature_columns` |
-| 3 | `macd()` read a global | `technical.macd(close, …)` is pure. A test checks it uses its argument. |
-| 4 | Linear regression / AutoReg on a binary target, scored with R²/MSE | Classifiers only, with classification metrics only |
-| 5 | R²/MSE printed from a stale `Y_pred` | `evaluate_model()` uses each model's own predictions |
-| 6 | SelectKBest section cross-validated the wrong pipeline | One registry loop, so there are no copy-paste variables |
-| 7 | Permutation importance on the test set, then predicted with the wrong features | `validation_importance()` uses the last training fold and the original feature names |
-| 8 | Reports refit a different variant from the one cross-validated | The pipeline that is tuned, CV'd and fitted is also the one evaluated, backtested and plotted |
-| 9 | Scaler re-fitted on scaled data; PCA fitted on the full dataset | Scaler/PCA sit inside the `Pipeline` and are fitted per fold |
-| 10 | Default KFold on time series | `TimeSeriesSplit` everywhere, and `shuffle=False` for the split |
-| 11 | Gradient boosting `max_depth=100` | Depth grid 2–5, chosen by time-series CV |
-| 12 | Sharpe/Sortino not annualised; Calmar used mean daily return; no costs | √252 annualisation, Calmar = CAGR / max DD, costs in bp on position changes |
-| 13 | Histograms of cumulative returns | Daily returns |
-| 14 | `EMA_crossover` = 1 when the short EMA was *below* the long EMA | `ema_bullish` = 1 when short > long (tested) |
-| 15 | `np.NaN`, `fillna(method="ffill")`, yfinance MultiIndex | Modern APIs; MultiIndex handled and tested |
-| 16 | Copy-pasted blocks per model | `run_experiment()` loops over `MODEL_REGISTRY` |
-
-Other changes: raw SMA/EMA price levels were replaced by ratios to the close, so features are
-comparable across time and across tickers. RSI now uses Wilder's smoothing (`alpha = 1/n`).
-
-## Layout
+## Project layout
 
 ```
 src/stockml/
   config.py         universe, dates, windows, model/backtest/analysis settings, ticker names/units
   data/             loader (yfinance + Parquet cache), cleaning (validation, outlier repair)
-  features/         technical indicators, next-day target, feature pipeline
-  models/           registry of sklearn pipelines, time-series training, joblib persistence
+  features/         technical indicators, prediction targets, feature pipeline
+  models/           registry of sklearn pipelines, time-series training, walk-forward, persistence
   evaluation/       classification + risk metrics, backtest, cost sensitivity
   analysis.py       descriptive stats for the explanatory charts
   experiment.py     end-to-end train/evaluate loop over the model registry
@@ -262,9 +386,11 @@ web/
 tests/core          library unit tests (incl. no-leakage and hand-computed backtests)
 tests/web           service and view tests
 notebooks/          exploration notebook importing from stockml
-legacy/             original notebook export (reference only)
+docs/screenshots/   images used in this README
 data/               (git-ignored) cached prices, training runs, SQLite database
 deploy/             container entrypoint (gunicorn) and one-time Google Cloud setup script
 video/              explainer video: animation (HTML), data export, page capture, renderer
 .github/workflows/  CI checks, nightly data refresh, image build and deploy to Cloud Run
 ```
+
+*Educational project: nothing here is investment advice.*
