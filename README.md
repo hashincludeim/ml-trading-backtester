@@ -349,8 +349,26 @@ One-time setup:
 
 Until the variables are set, the workflow still builds and pushes the image and skips the deploy
 step. The first visit after an idle period waits a few seconds while an instance starts.
-`DJANGO_ALLOWED_HOSTS` defaults to `.run.app`; for a custom domain, add it with
-`--set-env-vars` in the deploy step.
+`DJANGO_ALLOWED_HOSTS` defaults to `.run.app`.
+
+To serve the site on your own subdomain (for example `upordown.example.com`):
+
+1. Deploy in a region that supports Cloud Run domain mappings (`europe-west1`, `europe-west4`,
+   `us-central1` and a few others; `europe-west2` does not). To move, set `GCP_REGION` to the new
+   region, re-run the workflow, then delete the old service:
+   `gcloud run services delete stockml --region <old-region>`.
+2. Verify the root domain in [Google Search Console](https://search.google.com/search-console)
+   (Domain property) by adding the TXT record it gives you at your DNS provider.
+3. Map the subdomain in Cloud Shell:
+
+   ```bash
+   gcloud beta run domain-mappings create --service stockml --domain upordown.example.com --region <region>
+   ```
+
+4. At your DNS provider, add a `CNAME` record: host `upordown`, value `ghs.googlehosted.com.`
+5. Add a repository variable `SITE_DOMAIN` = `upordown.example.com` so Django accepts the host,
+   and re-run the workflow. Google issues the HTTPS certificate automatically, usually within
+   15–60 minutes of DNS resolving.
 
 To try the image locally, after `fetch_prices` and `train_models`:
 
