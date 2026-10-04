@@ -1,5 +1,7 @@
 # Up or Down
 
+**Live demo: [upordown.hashimsalim.com](https://upordown.hashimsalim.com/)**
+
 Will tomorrow's close be higher than today's? Up or Down trains seven machine-learning models to
 answer that for the S&P 500 and four large US tech stocks. It backtests a trading strategy built
 on their answers and shows every step in an interactive Django + Plotly dashboard. The core
